@@ -44,6 +44,7 @@ struct AppState {
     SDL_Renderer* renderer = nullptr;
     Joueur        joueur;
     std::vector<Piece> pieces;
+    int           score = 0;
     Uint64        dernierTemps = 0;  // instant de la frame précédente, en nanosecondes
 };
 
@@ -135,19 +136,27 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     if (joueur.x < 0.f) { joueur.x = 0.f; }
     if (joueur.y < 0.f) { joueur.y = 0.f; }
 
+    // Ramassage : retirer du vector les pièces touchées et augmenter le score
+    Rect rJoueur{joueur.x, joueur.y, joueur.taille, joueur.taille};
+    size_t i = 0;
+    while (i < state->pieces.size()) {
+        const Piece &p = state->pieces[i];
+        Rect rPiece{p.x, p.y, p.taille, p.taille};
+        if (collision(rJoueur, rPiece)) {
+            state->pieces[i] = state->pieces.back();
+            state->pieces.pop_back();
+            state->score += 1;
+        }
+        else { i++; }
+    }
+
     // --- Dessin ---
     SDL_SetRenderDrawColor(state->renderer, 30, 30, 60, 255);
     SDL_RenderClear(state->renderer);
 
-    // Pièces en jaune, en vert si le joueur les touche (test temporaire)
-    Rect rJoueur{joueur.x, joueur.y, joueur.taille, joueur.taille};
-    for (const Piece &p : state->pieces) {
-        Rect rPiece{p.x, p.y, p.taille, p.taille};
-        if (collision(rJoueur, rPiece))
-            SDL_SetRenderDrawColor(state->renderer, 80, 220, 80, 255);
-        else
-            SDL_SetRenderDrawColor(state->renderer, 255, 200, 0, 255);
-
+    // Pièces en jaune
+    SDL_SetRenderDrawColor(state->renderer, 255, 200, 0, 255);
+    for (const Piece& p : state->pieces) {
         SDL_FRect rect{p.x, p.y, p.taille, p.taille};
         SDL_RenderFillRect(state->renderer, &rect);
     }
@@ -155,6 +164,10 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     SDL_FRect rect{joueur.x, joueur.y, joueur.taille, joueur.taille};
     SDL_SetRenderDrawColor(state->renderer, 230, 80, 80, 255);
     SDL_RenderFillRect(state->renderer, &rect);
+
+    // Score en haut à gauche (police 8x8 intégrée à SDL, pratique pour déboguer)
+    SDL_SetRenderDrawColor(state->renderer, 255, 255, 255, 255);
+    SDL_RenderDebugTextFormat(state->renderer, 10, 10, "Score : %d", state->score);
 
     SDL_RenderPresent(state->renderer);
     return SDL_APP_CONTINUE;
