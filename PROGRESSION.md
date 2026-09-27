@@ -80,7 +80,7 @@ cmake --build build && ./build/<dossier>/<exécutable>
 
 ## Où on s'est arrêtés
 
-En plein milieu de l'étape **texte** (`06-texte/`, pas encore commitée au moment d'écrire ceci).
+En plein milieu de l'étape **texte** (`06-texte/`, commitée en l’état ; le build de `texte` échoue tant que la fonction n’est pas finie).
 Tout est prêt (police `assets/police.ttf` = JetBrains Mono, `TTF_Init` / `TTF_OpenFont` / `TTF_CloseFont`,
 `struct TexteCache { texture; valeur = -1; }`, affichage dans `dessiner`) **sauf** la fonction
 `mettreAJourTexteScore`, que Dylan est en train d'écrire. Elle ne compile pas encore.
