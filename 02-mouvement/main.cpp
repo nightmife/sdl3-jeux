@@ -1,5 +1,6 @@
 // Leçon 2 : dessiner un joueur et le déplacer au clavier.
 // Étape 1 : déplacement "naïf", d'un nombre fixe de pixels par frame.
+// Étape 2 : déplacement en pixels par SECONDE grâce au delta time.
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -8,8 +9,8 @@
 constexpr int LARGEUR_FENETRE = 1280;
 constexpr int HAUTEUR_FENETRE = 720;
 
-// En pixels PAR FRAME (on verra vite pourquoi c'est un problème)
-constexpr float VITESSE = 5.0f;
+// En pixels PAR SECONDE : ne dépend plus du nombre de FPS
+constexpr float VITESSE = 300.0f;
 
 struct Joueur {
     float x = 0.0f;  // position du coin haut-gauche
@@ -21,6 +22,7 @@ struct AppState {
     SDL_Window*   window   = nullptr;
     SDL_Renderer* renderer = nullptr;
     Joueur        joueur;
+    Uint64        dernierTemps = 0;  // instant de la frame précédente, en nanosecondes
 };
 
 SDL_AppResult SDL_AppInit(void** appstate, int /*argc*/, char* /*argv*/[])
@@ -42,6 +44,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int /*argc*/, char* /*argv*/[])
     // VSync : on attend le rafraîchissement de l'écran avant chaque Present.
     // Le jeu tourne donc à la fréquence de ton écran (60 Hz, 144 Hz...).
     SDL_SetRenderVSync(state->renderer, 1);
+
+    // Point de départ du chronomètre pour le calcul du delta time
+    state->dernierTemps = SDL_GetTicksNS();
 
     // Joueur au centre de l'écran
     state->joueur.x = (LARGEUR_FENETRE - state->joueur.taille) / 2.0f;
@@ -72,10 +77,14 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     // si la touche X est enfoncée EN CE MOMENT.
     const bool* clavier = SDL_GetKeyboardState(nullptr);
 
-    if (clavier[SDL_SCANCODE_D]) { joueur.x += VITESSE; } 
-    if (clavier[SDL_SCANCODE_A]) { joueur.x -= VITESSE; }
-    if (clavier[SDL_SCANCODE_W]) { joueur.y -= VITESSE; }
-    if (clavier[SDL_SCANCODE_S]) { joueur.y += VITESSE; }
+    Uint64 maintenant = SDL_GetTicksNS();
+    float dt = static_cast<float>(maintenant - state->dernierTemps) / SDL_NS_PER_SECOND;
+    state->dernierTemps = maintenant;
+
+    if (clavier[SDL_SCANCODE_D]) { joueur.x += VITESSE * dt; } 
+    if (clavier[SDL_SCANCODE_A]) { joueur.x -= VITESSE * dt; }
+    if (clavier[SDL_SCANCODE_W]) { joueur.y -= VITESSE * dt; }
+    if (clavier[SDL_SCANCODE_S]) { joueur.y += VITESSE * dt; }
 
     // --- Dessin ---
     SDL_SetRenderDrawColor(state->renderer, 30, 30, 60, 255);
