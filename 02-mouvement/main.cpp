@@ -86,6 +86,12 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     if (clavier[SDL_SCANCODE_W]) { joueur.y -= VITESSE * dt; }
     if (clavier[SDL_SCANCODE_S]) { joueur.y += VITESSE * dt; }
 
+    // Garder le joueur dans la fenêtre
+    if (joueur.x > LARGEUR_FENETRE - joueur.taille) { joueur.x = LARGEUR_FENETRE - joueur.taille; }
+    if (joueur.y > HAUTEUR_FENETRE - joueur.taille) { joueur.y = HAUTEUR_FENETRE - joueur.taille; }
+    if (joueur.x < 0.f) { joueur.x = 0.f; }
+    if (joueur.y < 0.f) { joueur.y = 0.f; }
+
     // --- Dessin ---
     SDL_SetRenderDrawColor(state->renderer, 30, 30, 60, 255);
     SDL_RenderClear(state->renderer);
