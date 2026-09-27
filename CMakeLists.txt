@@ -10,3 +10,4 @@ find_package(SDL3 REQUIRED CONFIG)
 # Une leçon = un sous-dossier = un exécutable
 add_subdirectory(01-fenetre)
 add_subdirectory(01b-classique)
+add_subdirectory(02-mouvement)

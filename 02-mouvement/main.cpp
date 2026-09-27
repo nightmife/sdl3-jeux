@@ -1,0 +1,101 @@
+// Leçon 2 : dessiner un joueur et le déplacer au clavier.
+// Étape 1 : déplacement "naïf", d'un nombre fixe de pixels par frame.
+
+#define SDL_MAIN_USE_CALLBACKS 1
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+
+constexpr int LARGEUR_FENETRE = 1280;
+constexpr int HAUTEUR_FENETRE = 720;
+
+// En pixels PAR FRAME (on verra vite pourquoi c'est un problème)
+constexpr float VITESSE = 5.0f;
+
+struct Joueur {
+    float x = 0.0f;  // position du coin haut-gauche
+    float y = 0.0f;
+    float taille = 50.0f;
+};
+
+struct AppState {
+    SDL_Window*   window   = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    Joueur        joueur;
+};
+
+SDL_AppResult SDL_AppInit(void** appstate, int /*argc*/, char* /*argv*/[])
+{
+    auto* state = new AppState{};
+    *appstate = state;
+
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("SDL_Init a échoué : %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+
+    if (!SDL_CreateWindowAndRenderer("Leçon 2 - Mouvement", LARGEUR_FENETRE, HAUTEUR_FENETRE, 0,
+                                     &state->window, &state->renderer)) {
+        SDL_Log("Création de la fenêtre impossible : %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+
+    // VSync : on attend le rafraîchissement de l'écran avant chaque Present.
+    // Le jeu tourne donc à la fréquence de ton écran (60 Hz, 144 Hz...).
+    SDL_SetRenderVSync(state->renderer, 1);
+
+    // Joueur au centre de l'écran
+    state->joueur.x = (LARGEUR_FENETRE - state->joueur.taille) / 2.0f;
+    state->joueur.y = (HAUTEUR_FENETRE - state->joueur.taille) / 2.0f;
+
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppEvent(void* /*appstate*/, SDL_Event* event)
+{
+    if (event->type == SDL_EVENT_QUIT)
+        return SDL_APP_SUCCESS;
+
+    // Échap pour quitter, pratique pendant les tests
+    if (event->type == SDL_EVENT_KEY_DOWN && event->key.scancode == SDL_SCANCODE_ESCAPE)
+        return SDL_APP_SUCCESS;
+
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppIterate(void* appstate)
+{
+    auto* state = static_cast<AppState*>(appstate);
+    Joueur& joueur = state->joueur;
+
+    // --- Mise à jour ---
+    // Tableau de bool indexé par scancode : clavier[SDL_SCANCODE_X] vaut true
+    // si la touche X est enfoncée EN CE MOMENT.
+    const bool* clavier = SDL_GetKeyboardState(nullptr);
+
+    if (clavier[SDL_SCANCODE_D]) { joueur.x += VITESSE; } 
+    if (clavier[SDL_SCANCODE_A]) { joueur.x -= VITESSE; }
+    if (clavier[SDL_SCANCODE_W]) { joueur.y -= VITESSE; }
+    if (clavier[SDL_SCANCODE_S]) { joueur.y += VITESSE; }
+
+    // --- Dessin ---
+    SDL_SetRenderDrawColor(state->renderer, 30, 30, 60, 255);
+    SDL_RenderClear(state->renderer);
+
+    SDL_FRect rect{joueur.x, joueur.y, joueur.taille, joueur.taille};
+    SDL_SetRenderDrawColor(state->renderer, 230, 80, 80, 255);
+    SDL_RenderFillRect(state->renderer, &rect);
+
+    SDL_RenderPresent(state->renderer);
+    return SDL_APP_CONTINUE;
+}
+
+void SDL_AppQuit(void* appstate, SDL_AppResult /*result*/)
+{
+    auto* state = static_cast<AppState*>(appstate);
+    if (!state)
+        return;
+
+    if (state->renderer) SDL_DestroyRenderer(state->renderer);
+    if (state->window)   SDL_DestroyWindow(state->window);
+    delete state;
+}
