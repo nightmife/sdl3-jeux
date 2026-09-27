@@ -24,7 +24,16 @@ SDL_AppResult SDL_AppInit(void** appstate, int /*argc*/, char* /*argv*/[])
     auto* state = new AppState{};
     *appstate = state;  // SDL garde ce pointeur et nous le rendra partout
 
-    // TODO(human)
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("Erreur, %s non initialiser.", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+
+    if (!SDL_CreateWindowAndRenderer("titre", 1280, 720, 0, &state->window, &state->renderer)){
+        SDL_Log("Erreur, %s non initialiser.", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+
 
     return SDL_APP_CONTINUE;
 }
