@@ -39,15 +39,17 @@ static bool collision(const Rect& a, const Rect& b)
     return (a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y); 
 }
 
-// Ajoute NB_PIECES pièces à des positions aléatoires.
-// SDL_randf() renvoie un float dans [0, 1[, qu'on étire sur la zone
+// Ajoute NB_PIECES pièces à des positions aléatoires, jamais sur la zone interdite
+// (le joueur). SDL_randf() renvoie un float dans [0, 1[, qu'on étire sur la zone
 // où la pièce reste entièrement visible.
-static void genererPieces(std::vector<Piece>& pieces)
+static void genererPieces(std::vector<Piece>& pieces, const Rect& zoneInterdite)
 {
     for (int i = 0; i < NB_PIECES; ++i) {
         Piece p;
-        p.x = SDL_randf() * (LARGEUR_FENETRE - p.taille);
-        p.y = SDL_randf() * (HAUTEUR_FENETRE - p.taille);
+        do {
+            p.x = SDL_randf() * (LARGEUR_FENETRE - p.taille);
+            p.y = SDL_randf() * (HAUTEUR_FENETRE - p.taille);
+        } while (collision(zoneInterdite, Rect(p.x, p.y, p.taille, p.taille)));
         pieces.push_back(p);  // ajoute une copie de p à la fin du vector
     }
 }
@@ -88,7 +90,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int /*argc*/, char* /*argv*/[])
     state->joueur.x = (LARGEUR_FENETRE - state->joueur.taille) / 2.0f;
     state->joueur.y = (HAUTEUR_FENETRE - state->joueur.taille) / 2.0f;
 
-    genererPieces(state->pieces);
+    Rect rJoueur{state->joueur.x, state->joueur.y, state->joueur.taille, state->joueur.taille};
+    genererPieces(state->pieces, rJoueur);
 
     return SDL_APP_CONTINUE;
 }
@@ -157,7 +160,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     }
 
     // Nouvelle vague quand toutes les pièces sont ramassées
-    if (state->pieces.empty()) { genererPieces(state->pieces); }
+    if (state->pieces.empty()) { genererPieces(state->pieces, rJoueur); }
 
     // --- Dessin ---
     SDL_SetRenderDrawColor(state->renderer, 30, 30, 60, 255);
