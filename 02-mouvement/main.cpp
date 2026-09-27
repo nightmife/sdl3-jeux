@@ -76,15 +76,27 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     // Tableau de bool indexé par scancode : clavier[SDL_SCANCODE_X] vaut true
     // si la touche X est enfoncée EN CE MOMENT.
     const bool* clavier = SDL_GetKeyboardState(nullptr);
-
+    
     Uint64 maintenant = SDL_GetTicksNS();
     float dt = static_cast<float>(maintenant - state->dernierTemps) / SDL_NS_PER_SECOND;
     state->dernierTemps = maintenant;
+    
+    // Déplacement : direction (dx, dy) normalisée, puis vitesse * dt
+    float dx = 0.f, dy = 0.f;
 
-    if (clavier[SDL_SCANCODE_D]) { joueur.x += VITESSE * dt; } 
-    if (clavier[SDL_SCANCODE_A]) { joueur.x -= VITESSE * dt; }
-    if (clavier[SDL_SCANCODE_W]) { joueur.y -= VITESSE * dt; }
-    if (clavier[SDL_SCANCODE_S]) { joueur.y += VITESSE * dt; }
+    if (clavier[SDL_SCANCODE_D]) { dx += 1; } 
+    if (clavier[SDL_SCANCODE_A]) { dx -= 1; }
+    if (clavier[SDL_SCANCODE_W]) { dy -= 1; }
+    if (clavier[SDL_SCANCODE_S]) { dy += 1; }
+
+    float norme = SDL_sqrtf((dx * dx) + (dy * dy));
+    if (norme > 0) {
+        dx /= norme;
+        dy /= norme;
+    }
+
+    joueur.x += VITESSE * dx * dt;
+    joueur.y += VITESSE * dy * dt;
 
     // Garder le joueur dans la fenêtre
     if (joueur.x > LARGEUR_FENETRE - joueur.taille) { joueur.x = LARGEUR_FENETRE - joueur.taille; }
