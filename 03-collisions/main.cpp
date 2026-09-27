@@ -49,7 +49,7 @@ static void genererPieces(std::vector<Piece>& pieces, const Rect& zoneInterdite)
         do {
             p.x = SDL_randf() * (LARGEUR_FENETRE - p.taille);
             p.y = SDL_randf() * (HAUTEUR_FENETRE - p.taille);
-        } while (collision(zoneInterdite, Rect(p.x, p.y, p.taille, p.taille)));
+        } while (collision(zoneInterdite, Rect{p.x, p.y, p.taille, p.taille}));
         pieces.push_back(p);  // ajoute une copie de p à la fin du vector
     }
 }
