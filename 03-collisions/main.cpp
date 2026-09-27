@@ -27,6 +27,18 @@ struct Piece {
     float taille = 20.0f;
 };
 
+// Rectangle aligné sur les axes (AABB : Axis-Aligned Bounding Box)
+struct Rect {
+    float x, y;  // coin haut-gauche
+    float w, h;  // largeur, hauteur
+};
+
+// Vrai si les deux rectangles se chevauchent
+static bool collision(const Rect& a, const Rect& b)
+{
+    return (a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y); 
+}
+
 struct AppState {
     SDL_Window*   window   = nullptr;
     SDL_Renderer* renderer = nullptr;
@@ -127,9 +139,15 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     SDL_SetRenderDrawColor(state->renderer, 30, 30, 60, 255);
     SDL_RenderClear(state->renderer);
 
-    // Pièces en jaune
-    SDL_SetRenderDrawColor(state->renderer, 255, 200, 0, 255);
+    // Pièces en jaune, en vert si le joueur les touche (test temporaire)
+    Rect rJoueur{joueur.x, joueur.y, joueur.taille, joueur.taille};
     for (const Piece &p : state->pieces) {
+        Rect rPiece{p.x, p.y, p.taille, p.taille};
+        if (collision(rJoueur, rPiece))
+            SDL_SetRenderDrawColor(state->renderer, 80, 220, 80, 255);
+        else
+            SDL_SetRenderDrawColor(state->renderer, 255, 200, 0, 255);
+
         SDL_FRect rect{p.x, p.y, p.taille, p.taille};
         SDL_RenderFillRect(state->renderer, &rect);
     }
