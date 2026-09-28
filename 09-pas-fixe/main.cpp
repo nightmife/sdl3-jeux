@@ -316,7 +316,14 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         const int scoreAvant = state->jeu.score;
 
         // Avancer la logique par pas fixes
-        // TODO(human)
+        if (dt > 0.25f) dt = 0.25f;
+        
+        state->accumulateur += dt;
+
+        while (state->accumulateur >= PAS_FIXE) {
+            mettreAJour(state->jeu, entrees, PAS_FIXE);
+            state->accumulateur -= PAS_FIXE;
+        }
 
         // Bruitage si au moins une pièce a été ramassée pendant cette mise à jour
         if (scoreAvant != state->jeu.score) jouerSon(state->sonPiece);
