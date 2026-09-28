@@ -69,21 +69,28 @@ static SDL_Texture* chargerTexture(SDL_Renderer* renderer, const char* nom)
 static void mettreAJourTexteScore(SDL_Renderer* renderer, TTF_Font* police,
                                   TexteCache& cache, int score)
 {
-    // TODO(human)
+    if (police == nullptr) return;
+    if (cache.valeur == score) return;
+
     std::string texte = "Score: " + std::to_string(score);
-    if (police == nullptr) {
-        if (score != cache.valeur) {
-            SDL_RenderDebugTextFormat(renderer, 10, 10, texte.c_str()); 
-        }
-    } else {
-        if (score != cache.score) {
-            SDL_Surface *surface = TTF_RenderText_Blended(police, texte.c_str(), 0, SDL_Color{255, 255, 255, 255});
-            SDL_CreateTextureFromSurface(renderer, surface);
-            SDL_DestroySurface(surface);
-            SDL_DestroyTexture(cache.texture);
-            cache.valeur = 
-        }
+ 
+    SDL_Surface *surface = TTF_RenderText_Blended(police, texte.c_str(), 0, SDL_Color{255, 255, 255, 255});
+    
+    if (surface == nullptr) {
+        SDL_Log("Rendu du texte impossible: %s", SDL_GetError());
+        return;
     }
+
+    SDL_Texture *nouvelle =  SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_DestroySurface(surface);
+    if (nouvelle == nullptr) {
+        SDL_Log("Création de la texture du texte impossible: %s", SDL_GetError());
+        return;
+    }
+    
+    if (cache.texture) SDL_DestroyTexture(cache.texture);
+    cache.texture = nouvelle;
+    cache.valeur = score; 
 }
 
 // Dessine l'état du jeu. Reçoit le jeu en const : dessiner ne modifie rien.
