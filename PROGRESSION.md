@@ -1,6 +1,6 @@
 # Progression : SDL3 et jeux en C++
 
-Dernière séance : 27/09/2026 (2e séance du jour)
+Dernière séance : 28/09/2026
 
 Objectif final : des jeux PC en C++ avec SDL3 (API callbacks), jusqu'au multijoueur
 (un joueur héberge une salle, les autres la rejoignent).
@@ -17,8 +17,8 @@ cmake --build build && ./build/<dossier>/<exécutable>
 | 1 | Fenêtre + boucle : callbacks (`01-fenetre`) et version classique (`01b-classique`) | ✅ Fait |
 | 2 | Dessin, clavier, delta time, bords, diagonale (`02-mouvement`) | ✅ Fait |
 | 3 | `std::vector`, collisions, pièces/score, séparation logique/SDL (`03-collisions`, `04-separation`) | ✅ Fait |
-| 4 | Textures (SDL_image) ✅ (`05-textures`), texte (SDL_ttf) 🚧 (`06-texte`), son ⬜ | ⏭️ **En cours** |
-| 5 | Architecture : états (menu/jeu/pause), pas de temps fixe | ⬜ À faire |
+| 4 | Textures (`05-textures`), texte SDL_ttf (`06-texte`), son (`07-son`) | ✅ Fait |
+| 5 | États menu/partie/pause ✅ (`08-etats`), pas de temps fixe 🚧 (`09-pas-fixe`) | ⏭️ **En cours** |
 | 6 | Réseau : client/serveur, TCP vs UDP, héberger/rejoindre une salle, synchro | ⬜ À faire |
 
 ## Ce qu'on a vu
@@ -78,28 +78,44 @@ cmake --build build && ./build/<dossier>/<exécutable>
 - `if` invariant dans une boucle : pas de coût réel (prédiction de branchement, *loop unswitching*),
   donc on choisit selon la lisibilité.
 
+### Leçon 4 (suite) : texte et son (`06-texte/`, `07-son/`)
+- Texte : `TTF_Init`, `TTF_OpenFont(chemin, taille)`, puis
+  texte → `TTF_RenderText_Blended` → `SDL_Surface` (RAM) → `SDL_CreateTextureFromSurface` → texture (GPU).
+  On détruit la surface tout de suite.
+- **Cache avec invalidation** (`TexteCache { texture; valeur = -1; }`) : on ne régénère le texte que si le score change.
+- Remplacement sûr : créer la nouvelle texture, **puis** détruire l'ancienne. Si la création échoue, on garde l'ancienne.
+- Piège vu : le résultat de `SDL_CreateTextureFromSurface` non stocké = texture perdue **et** fuite GPU.
+- Sorties anticipées (`if (...) return;`) plutôt que des `if` imbriqués.
+- Son : `SDL_INIT_AUDIO`, `SDL_LoadWAV` (données libérées avec `SDL_free`), `SDL_OpenAudioDeviceStream`
+  + `SDL_ResumeAudioStreamDevice`, et pour jouer : `SDL_ClearAudioStream` + `SDL_PutAudioStreamData`.
+  Un flux est une **file** : sans mixage, les sons ne se superposent pas.
+- Détecter un événement sans toucher à la logique : `const int scoreAvant = ...` **avant** `mettreAJour`,
+  puis comparer après (piège vu : noter la valeur *après* = toujours égale).
+
+### Leçon 5 : états (`08-etats/`)
+- **Machine à états** : `enum class Ecran { Menu, Partie, Pause }` dans `AppState`.
+  `enum class` : noms préfixés, pas de conversion implicite en `int`.
+- Transitions dans `SDL_AppEvent` (actions ponctuelles), avec `switch` sur l'écran puis test de la touche.
+  On ignore `event->key.repeat`. La même touche (Échap) fait des choses différentes selon l'écran.
+- `||` seulement pour des conditions qui mènent à la **même** action (piège vu : Retour arrière rangé
+  avec P/Échap envoyait vers la partie au lieu du menu).
+- `mettreAJour` n'est appelée qu'en `Partie`, mais le `dt` est calculé à chaque frame (sinon énorme `dt` à la reprise).
+- `SDL_RenderPresent` déplacé à la fin de `SDL_AppIterate`, pour dessiner les écrans par-dessus le jeu
+  (voile semi-transparent avec `SDL_BLENDMODE_BLEND`, textes fixes générés une fois).
+
 ## Où on s'est arrêtés
 
-En plein milieu de l'étape **texte** (`06-texte/`, commitée en l’état ; le build de `texte` échoue tant que la fonction n’est pas finie).
-Tout est prêt (police `assets/police.ttf` = JetBrains Mono, `TTF_Init` / `TTF_OpenFont` / `TTF_CloseFont`,
-`struct TexteCache { texture; valeur = -1; }`, affichage dans `dessiner`) **sauf** la fonction
-`mettreAJourTexteScore`, que Dylan est en train d'écrire. Elle ne compile pas encore.
+En plein **pas de temps fixe** (`09-pas-fixe/`, qui compile avec 2 warnings « inutilisé », c'est normal).
+`PAS_FIXE = 1/60` est dans `jeu.h`, `float accumulateur` dans `AppState`. Il reste le `TODO(human)` dans
+`SDL_AppIterate`, dans le `if (state->ecran == Ecran::Partie)`, à la place de l'ancien `mettreAJour(..., dt)` :
+1. plafonner `dt` à `0.25f` (anti « spirale de la mort ») ;
+2. `state->accumulateur += dt;`
+3. `while (state->accumulateur >= PAS_FIXE) { mettreAJour(state->jeu, entrees, PAS_FIXE); state->accumulateur -= PAS_FIXE; }`
+Question posée : faut-il remettre l'accumulateur à 0 à la reprise après une pause ?
+(Indice : le code est dans la branche `Partie`, donc l'accumulateur ne grossit pas pendant la pause.)
 
-Principe : texte → `TTF_RenderText_Blended` → `SDL_Surface` (RAM) → `SDL_CreateTextureFromSurface`
-→ `SDL_Texture` (GPU). C'est coûteux, donc on ne régénère que si le score change (cache + invalidation).
-
-Plan de la fonction, et ce qu'il reste à corriger dans le brouillon actuel :
-1. `if (police == nullptr) return;` puis `if (cache.valeur == score) return;`.
-   ⚠️ Le brouillon **dessine** dans le cas sans police : à retirer, le plan B est déjà dans `dessiner`.
-   ⚠️ Il utilise aussi `cache.score` au lieu de `cache.valeur`.
-2. `std::string texte = "Score : " + std::to_string(score);` (déjà fait).
-3. Surface via `TTF_RenderText_Blended(police, texte.c_str(), 0, SDL_Color{...})` (déjà fait),
-   en vérifiant que la surface n'est pas `nullptr`.
-4. ⚠️ Le résultat de `SDL_CreateTextureFromSurface` n'est **stocké nulle part** : il faut
-   `SDL_Texture* nouvelle = ...`, puis `SDL_DestroySurface(surface)` dans tous les cas.
-5. Détruire l'ancienne (`if (cache.texture) SDL_DestroyTexture(...)`), puis `cache.texture = nouvelle;`
-   et `cache.valeur = score;` (la ligne `cache.valeur =` est incomplète).
-   Question de conception en suspens : si la création échoue, garder l'ancienne texture ou non ?
+Pourquoi : avec un `dt` variable, les calculs diffèrent légèrement d'un écran à l'autre (arrondis `float`),
+ce qui est fatal en réseau. Avec un pas fixe, tout le monde fait exactement les mêmes calculs.
 
 Bonus facultatifs toujours en attente :
 - marge autour du joueur et limite d'essais dans `genererPieces` ;
@@ -107,9 +123,8 @@ Bonus facultatifs toujours en attente :
 
 ## Prochaine étape
 
-1. Terminer `mettreAJourTexteScore`, compiler, tester (le score s'affiche avec la vraie police).
-   Tester aussi le plan B en renommant `build/06-texte/assets/police.ttf`.
-2. Son : l'API audio de SDL3 (`SDL_AudioStream`, `SDL_LoadWAV`), sans bibliothèque en plus.
-   Par exemple, un bruitage quand on ramasse une pièce (il faudra que la logique **signale** l'événement
-   sans dépendre de SDL, par exemple avec un compteur de pièces ramassées pendant la frame).
-3. Puis la leçon 5 (états menu/jeu/pause, pas de temps fixe).
+1. Finir le pas fixe, tester, commiter. Fin de la leçon 5.
+2. **Leçon 6 : le réseau.** Notions : client/serveur, hôte qui fait autorité, TCP vs UDP, sockets.
+   Le client envoie ses `Entrees` (4 bool), l'hôte fait tourner `mettreAJour` et renvoie l'état.
+   Menu : ajouter « Héberger » / « Rejoindre » + un écran « Salle d'attente ».
+   Choix de bibliothèque à discuter (sockets POSIX directement, SDL3_net, ENet…).
