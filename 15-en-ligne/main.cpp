@@ -282,32 +282,38 @@ static void dessinerMenuTriches(SDL_Renderer* renderer, const Triches& t)
     };
     const int nb = static_cast<int>(sizeof(lignes) / sizeof(lignes[0]));
 
-    // Panneau semi-transparent (coordonnées en "petits pixels" : l'échelle x2 est
-    // appliquée juste après, donc 10 ici = 20 à l'écran)
+    // Discrétion : opacité (alpha, de 0 = invisible à 255 = opaque) du fond et du
+    // texte. Baisse ces valeurs pour un menu encore plus transparent.
+    constexpr Uint8 ALPHA_FOND  = 70;
+    constexpr Uint8 ALPHA_TEXTE = 150;
+
+    // Coordonnées en "petits pixels" : l'échelle x2 s'applique, donc 10 ici = 20 à l'écran.
+    // Le mode BLEND reste actif pour TOUT le menu : sans lui, l'alpha serait ignoré.
     SDL_SetRenderScale(renderer, 2.0f, 2.0f);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 190);
+
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, ALPHA_FOND);
     const SDL_FRect fond{8, 32, 380, 26.0f + 12.0f * nb + 14.0f};  // sous le score
     SDL_RenderFillRect(renderer, &fond);
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 
-    SDL_SetRenderDrawColor(renderer, 255, 90, 90, 255);
+    SDL_SetRenderDrawColor(renderer, 255, 90, 90, ALPHA_TEXTE);
     SDL_RenderDebugText(renderer, 16, 40, "=== MODE TRICHE ===");
 
     for (int i = 0; i < nb; ++i) {
         const float y = 56.0f + 12.0f * static_cast<float>(i);
-        SDL_SetRenderDrawColor(renderer, 200, 200, 220, 255);
+        SDL_SetRenderDrawColor(renderer, 200, 200, 220, ALPHA_TEXTE);
         SDL_RenderDebugText(renderer, 16, y, lignes[i].touches);
         SDL_RenderDebugText(renderer, 106, y, lignes[i].nom);
         if (lignes[i].etat >= 0) {
-            if (lignes[i].etat) SDL_SetRenderDrawColor(renderer, 90, 255, 90, 255);   // vert
-            else                SDL_SetRenderDrawColor(renderer, 120, 120, 120, 255); // gris
+            if (lignes[i].etat) SDL_SetRenderDrawColor(renderer, 90, 255, 90, ALPHA_TEXTE);   // vert
+            else                SDL_SetRenderDrawColor(renderer, 120, 120, 120, ALPHA_TEXTE); // gris
             SDL_RenderDebugText(renderer, 342, y, lignes[i].etat ? "[ON]" : "[--]");
         }
     }
-    SDL_SetRenderDrawColor(renderer, 160, 160, 160, 255);
+    SDL_SetRenderDrawColor(renderer, 160, 160, 160, ALPHA_TEXTE);
     SDL_RenderDebugText(renderer, 16, 56.0f + 12.0f * nb + 2.0f, "Taper \"triche\" : verrouiller");
 
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);  // remettre le mode normal
     SDL_SetRenderScale(renderer, 1.0f, 1.0f);  // remettre l'échelle normale !
 }
 
