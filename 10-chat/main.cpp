@@ -23,25 +23,23 @@ constexpr Uint16 PORT = 7777;
 // Envoie le texte (sans le '\0' final). Renvoie false si la connexion est cassée.
 static bool envoyerTexte(NET_StreamSocket* socket, const char* texte)
 {
-    // TODO(human)
+    return NET_WriteToStreamSocket(socket, texte, static_cast<int>(SDL_strlen(texte)));
 }
 
 // Attend un message, le copie dans tampon (qui peut contenir tailleTampon octets)
 // et le termine par '\0'. Renvoie true si un message a été reçu.
-// Ton code de réception de l'étape d'avant, à adapter (il est en commentaire) :
 static bool recevoirTexte(NET_StreamSocket* socket, char* tampon, int tailleTampon)
 {
-    // // Recevoir le message du client et l'afficher
-    // void *aSurveillerClient[] = { client };
-    // NET_WaitUntilInputAvailable(aSurveillerClient, 1, -1);
-    //
-    // char tampon[256];
-    // int n = NET_ReadFromStreamSocket(client, tampon, sizeof(tampon) - 1);
-    //
-    // if (n > 0) {
-    //     tampon[n] = '\0';
-    //     SDL_Log("Message reçu: %s", tampon);
-    // } else if (n < 0) SDL_Log("Connexion perdu: %s", SDL_GetError());
+    void *aSurveillerClient[] = { socket };
+    NET_WaitUntilInputAvailable(aSurveillerClient, 1, -1);
+    
+    int n = NET_ReadFromStreamSocket(socket, tampon, tailleTampon - 1);
+   
+    if (n > 0) {
+         tampon[n] = '\0';
+         return true;
+    } else if (n < 0) SDL_Log("Connexion perdu: %s", SDL_GetError());
+    return false;
 }
 
 // ---------------------------------------------------------------------------
