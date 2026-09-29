@@ -23,8 +23,7 @@ bool envoyerMessage(NET_StreamSocket* socket, const void* donnees, int taille);
 // Sort un message complet de "reception" : sa taille, -1 si incomplet, -2 si trop gros.
 int extraireMessage(Reception& reception, void* dest, int tailleMax);
 
-// Attend puis ajoute à "reception" les octets arrivés. False si la connexion est cassée.
-bool recevoirOctets(NET_StreamSocket* socket, Reception& reception);
-
-// Attend le prochain message complet et renvoie sa taille (-1 si connexion cassée).
-int recevoirMessage(NET_StreamSocket* socket, Reception& reception, void* dest, int tailleMax);
+// NON BLOQUANT : ajoute à "reception" les octets arrivés depuis la dernière fois
+// (éventuellement aucun), sans jamais attendre. False si la connexion est cassée.
+// Ensuite, on appelle extraireMessage en boucle pour sortir les messages complets.
+bool lireDisponible(NET_StreamSocket* socket, Reception& reception);

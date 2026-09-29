@@ -162,3 +162,27 @@ bool decoderEtat(const std::uint8_t* tampon, int taille, Jeu& jeu)
     
     return l.ok && l.pos == l.taille;
 }
+
+// ---------------------------------------------------------------------------
+// Message de début : [type][indiceJoueur][nbJoueurs]
+// ---------------------------------------------------------------------------
+
+int encoderDebut(int indiceJoueur, int nbJoueurs, std::uint8_t* tampon, int capacite)
+{
+    Ecrivain e{tampon, capacite};
+    e.u8(static_cast<std::uint8_t>(TypeMessage::Debut));
+    e.u8(static_cast<std::uint8_t>(indiceJoueur));
+    e.u8(static_cast<std::uint8_t>(nbJoueurs));
+    return e.ok ? e.pos : -1;
+}
+
+bool decoderDebut(const std::uint8_t* tampon, int taille, int& indiceJoueur, int& nbJoueurs)
+{
+    Lecteur l{tampon, taille};
+    if (l.u8() != static_cast<std::uint8_t>(TypeMessage::Debut)) return false;
+    indiceJoueur = l.u8();
+    nbJoueurs    = l.u8();
+    return l.ok && l.pos == l.taille
+        && nbJoueurs >= 1 && nbJoueurs <= MAX_JOUEURS
+        && indiceJoueur >= 0 && indiceJoueur < nbJoueurs;
+}

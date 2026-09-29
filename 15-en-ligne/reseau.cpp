@@ -36,37 +36,20 @@ int extraireMessage(Reception& reception, void* dest, int tailleMax)
     return taille;
 } 
 
-// Attend puis ajoute à "reception" les octets arrivés. False si la connexion est cassée.
-bool recevoirOctets(NET_StreamSocket* socket, Reception& reception)
+bool lireDisponible(NET_StreamSocket* socket, Reception& reception)
 {
-    void* aSurveiller[] = { socket };
-    NET_WaitUntilInputAvailable(aSurveiller, 1, -1);
-
     const int placeLibre = static_cast<int>(sizeof(reception.octets)) - reception.nb;
     if (placeLibre == 0) {
-        SDL_Log("Tampon de réception plein : message trop gros ?");
+        SDL_Log("Tampon de réception plein: message trop gros ?");
         return false;
     }
+
     const int n = NET_ReadFromStreamSocket(socket, reception.octets + reception.nb, placeLibre);
     if (n < 0) {
-        SDL_Log("Connexion perdue : %s", SDL_GetError());
+        SDL_Log("Connexion perdue: %s", SDL_GetError());
         return false;
     }
+
     reception.nb += n;
     return true;
-}
-
-// Renvoie le prochain message complet (sa taille), en attendant autant qu'il faut.
-// -1 si la connexion est cassée.
-int recevoirMessage(NET_StreamSocket* socket, Reception& reception, void* dest, int tailleMax)
-{
-    for (;;) {
-        const int taille = extraireMessage(reception, dest, tailleMax);
-        if (taille >= 0) return taille;               // un message complet était déjà là
-        if (taille == -2) {
-            SDL_Log("Message invalide (trop gros) : on coupe la connexion");
-            return -1;
-        }
-        if (!recevoirOctets(socket, reception)) return -1;  // sinon, attendre la suite
-    }
 }

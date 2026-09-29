@@ -3,6 +3,7 @@
 // (127.0.0.1 pour tester sur le même PC, ou l'adresse Tailscale / publique).
 //
 // Étape C1 : menu, saisie de l'adresse, salle d'attente, connexion non bloquante.
+// Étape C2 : l'hôte prévient chaque client que la partie commence (message Debut).
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -14,6 +15,7 @@
 
 #include "affichage.h"
 #include "jeu.h"
+#include "messages.h"
 #include "session.h"
 
 // Un son chargé en mémoire, et le "tuyau" qui l'envoie vers la carte son
@@ -56,6 +58,7 @@ struct AppState {
     bool          estHote = false;
     Hote          hote;
     Client        client;
+    int           monIndice = 0;  // mon joueur dans jeu.joueurs (0 pour l'hôte)
     std::string   adresseSaisie = "127.0.0.1";
 };
 
@@ -93,6 +96,48 @@ static void jouerSon(Son& son)
     if (!son.stream) return;
     SDL_ClearAudioStream(son.stream);
     SDL_PutAudioStreamData(son.stream, son.donnees, static_cast<int>(son.taille));
+}
+
+// CLIENT : lit tout ce que l'hôte a envoyé et réagit à chaque message complet
+static void traiterMessagesClient(AppState* state)
+{
+    Client& c = state->client;
+    if (!lireDisponible(c.socket, c.reception)) {
+        c.etat   = EtatClient::Echec;
+        c.erreur = "l'hôte a fermé la connexion";
+        state->ecran = Ecran::ConnexionClient;  // pour afficher l'erreur
+        return;
+    }
+
+    std::uint8_t message[TAILLE_MAX_MESSAGE];
+    int taille;
+    while ((taille = extraireMessage(c.reception, message, sizeof(message))) >= 0) {
+        int indice = 0, nbJoueurs = 0;
+        if (decoderDebut(message, taille, indice, nbJoueurs)) {
+            SDL_Log("La partie commence : je suis le joueur %d sur %d", indice + 1, nbJoueurs);
+            state->monIndice = indice;
+            initialiser(state->jeu, 0, nbJoueurs);  // provisoire : l'hôte enverra le vrai état
+            state->ecran = Ecran::Partie;
+        } else {
+            SDL_Log("Message inconnu reçu de l'hôte (%d octets)", taille);
+        }
+    }
+    if (taille == -2) {  // message annoncé trop gros : l'hôte ne respecte pas le protocole
+        c.etat   = EtatClient::Echec;
+        c.erreur = "message invalide reçu";
+        state->ecran = Ecran::ConnexionClient;
+    }
+}
+
+// HÔTE : prévient chaque joueur distant que la partie commence, avec son numéro
+static void envoyerDebut(AppState* state)
+{
+    const int nbJoueurs = static_cast<int>(state->jeu.joueurs.size());
+    for (size_t k = 0; k < state->hote.joueurs.size(); ++k) {
+        std::uint8_t message[8];
+        const int taille = encoderDebut(static_cast<int>(k) + 1, nbJoueurs, message, sizeof(message));
+        envoyerMessage(state->hote.joueurs[k].socket, message, taille);
+    }
 }
 
 // Revenir au menu en coupant proprement le réseau
@@ -211,6 +256,8 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
             const int nb = 1 + static_cast<int>(state->hote.joueurs.size());
             initialiser(state->jeu, static_cast<unsigned>(SDL_GetPerformanceCounter()), nb);
             state->accumulateur = 0;
+            state->monIndice = 0;
+            envoyerDebut(state);
             state->ecran = Ecran::Partie;
         }
         break;
@@ -265,6 +312,9 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         accepterNouveauxJoueurs(state->hote);
     if (state->ecran == Ecran::ConnexionClient)
         avancerClient(state->client);
+    // Client connecté : écouter l'hôte (en attente du début, puis pendant la partie)
+    if (!state->estHote && state->client.etat == EtatClient::Connecte)
+        traiterMessagesClient(state);
 
     // --- Logique (C1 : seul l'hôte joue, les joueurs distants ne bougent pas encore) ---
     if (state->ecran == Ecran::Partie && state->estHote) {

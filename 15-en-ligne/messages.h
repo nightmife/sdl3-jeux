@@ -9,6 +9,7 @@
 enum class TypeMessage : std::uint8_t {
     Entrees = 1,  // client -> hôte : les touches enfoncées
     Etat    = 2,  // hôte -> clients : positions, pièces, scores
+    Debut   = 3,  // hôte -> un client : la partie commence, tu es le joueur n°X
 };
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,10 @@ struct Lecteur {
 constexpr int TAILLE_MESSAGE_ENTREES = 2;
 int  encoderEntrees(const Entrees& e, std::uint8_t* tampon);
 bool decoderEntrees(const std::uint8_t* tampon, int taille, Entrees& e);
+
+// Message de début : [type][ton indice dans jeu.joueurs][nombre de joueurs]
+int  encoderDebut(int indiceJoueur, int nbJoueurs, std::uint8_t* tampon, int capacite);
+bool decoderDebut(const std::uint8_t* tampon, int taille, int& indiceJoueur, int& nbJoueurs);
 
 // Message d'état : [type][nbJoueurs][x y score]...[nbPieces][x y]...
 // Renvoie le nombre d'octets écrits, ou -1 si le tampon est trop petit.
