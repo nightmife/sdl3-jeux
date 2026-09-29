@@ -4,6 +4,7 @@
 //
 // Étape C1 : menu, saisie de l'adresse, salle d'attente, connexion non bloquante.
 // Étape C2 : l'hôte prévient chaque client que la partie commence (message Debut).
+// Étape C3 : le client envoie ses touches, l'hôte calcule tout et renvoie l'état.
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -118,6 +119,9 @@ static void traiterMessagesClient(AppState* state)
             state->monIndice = indice;
             initialiser(state->jeu, 0, nbJoueurs);  // provisoire : l'hôte enverra le vrai état
             state->ecran = Ecran::Partie;
+        } else if (decoderEtat(message, taille, state->jeu)) {
+            // Rien d'autre à faire : jeu.joueurs et jeu.pieces viennent d'être remplacés
+            // par la version de l'hôte, et ils seront dessinés tels quels.
         } else {
             SDL_Log("Message inconnu reçu de l'hôte (%d octets)", taille);
         }
@@ -138,6 +142,35 @@ static void envoyerDebut(AppState* state)
         const int taille = encoderDebut(static_cast<int>(k) + 1, nbJoueurs, message, sizeof(message));
         envoyerMessage(state->hote.joueurs[k].socket, message, taille);
     }
+}
+
+// HÔTE : lit ce que chaque joueur distant a envoyé (ses touches)
+static void traiterMessagesHote(AppState* state)
+{
+    for (JoueurDistant &j : state->hote.joueurs) {
+        if (!lireDisponible(j.socket, j.reception)) {
+            SDL_Log("Un joueur s'est déconnecté");
+            continue;
+        }
+
+        std::uint8_t message[TAILLE_MAX_MESSAGE];
+        int taille;
+        while ((taille = extraireMessage(j.reception, message, sizeof(message))) >= 0) {
+            if (!decoderEntrees(message, taille, j.entrees)) {
+                SDL_Log("Message inconnu d'un joueur (%d octets)", taille);
+            }
+        }
+    }
+}
+
+// HÔTE : envoie l'état du jeu à tous les joueurs distants
+static void envoyerEtat(AppState* state)
+{
+    std::uint8_t message[TAILLE_MAX_MESSAGE];
+    const int taille = encoderEtat(state->jeu, message, sizeof(message));
+    if (taille < 0) return;
+    for (JoueurDistant& j : state->hote.joueurs)
+        envoyerMessage(j.socket, message, taille);
 }
 
 // Revenir au menu en coupant proprement le réseau
@@ -313,21 +346,40 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     if (state->ecran == Ecran::ConnexionClient)
         avancerClient(state->client);
     // Client connecté : écouter l'hôte (en attente du début, puis pendant la partie)
-    if (!state->estHote && state->client.etat == EtatClient::Connecte)
-        traiterMessagesClient(state);
-
-    // --- Logique (C1 : seul l'hôte joue, les joueurs distants ne bougent pas encore) ---
-    if (state->ecran == Ecran::Partie && state->estHote) {
-        std::vector<Entrees> entrees(state->jeu.joueurs.size());
-        entrees[0] = lireEntrees();  // l'hôte est le joueur 1
+    if (!state->estHote && state->client.etat == EtatClient::Connecte) {
         const int scoreAvant = scoreTotal(state->jeu);
+        traiterMessagesClient(state);
+        if (state->ecran == Ecran::Partie && scoreTotal(state->jeu) > scoreAvant)
+            jouerSon(state->sonPiece);
+    }
 
+    // --- HÔTE : c'est lui qui fait tourner le jeu pour tout le monde ---
+    if (state->ecran == Ecran::Partie && state->estHote) {
+        traiterMessagesHote(state);
+
+        // Les entrées de chacun : l'hôte depuis son clavier, les autres depuis le réseau
+        std::vector<Entrees> entrees(state->jeu.joueurs.size());
+        entrees[0] = lireEntrees();
+        for (size_t k = 0; k < state->hote.joueurs.size() && k + 1 < entrees.size(); ++k)
+            entrees[k + 1] = state->hote.joueurs[k].entrees;
+
+        const int scoreAvant = scoreTotal(state->jeu);
         state->accumulateur += dt;
+        bool aAvance = false;
         while (state->accumulateur >= PAS_FIXE) {
             mettreAJour(state->jeu, entrees, PAS_FIXE);
             state->accumulateur -= PAS_FIXE;
+            aAvance = true;
         }
+        if (aAvance) envoyerEtat(state);  // tout le monde voit le résultat
         if (scoreAvant != scoreTotal(state->jeu)) jouerSon(state->sonPiece);
+    }
+
+    // --- CLIENT : envoie ses touches, et affiche ce que l'hôte renvoie ---
+    if (state->ecran == Ecran::Partie && !state->estHote && state->client.etat == EtatClient::Connecte) {
+        std::uint8_t message[TAILLE_MESSAGE_ENTREES];
+        const int taille = encoderEntrees(lireEntrees(), message);
+        envoyerMessage(state->client.socket, message, taille);
     }
 
     // --- Dessin ---

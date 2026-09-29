@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "jeu.h"  // Entrees
 #include "reseau.h"
 
 // ---------------------------------------------------------------------------
@@ -16,6 +17,7 @@
 struct JoueurDistant {
     NET_StreamSocket* socket = nullptr;
     Reception         reception;  // un tampon de réception par connexion
+    Entrees           entrees;    // dernières touches reçues de ce joueur
 };
 
 struct Hote {
