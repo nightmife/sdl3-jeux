@@ -29,7 +29,17 @@ constexpr int TAILLE_MAX_MESSAGE = 1024;
 // puis les données. Renvoie false si la connexion est cassée ou si c'est trop long.
 static bool envoyerMessage(NET_StreamSocket* socket, const void* donnees, int taille)
 {
-    // TODO(human)
+    if (taille < 0 || taille > TAILLE_MAX_MESSAGE) {
+        SDL_Log("Taille du message négatif ou trop grand: %d", taille);
+        return false;
+    }
+
+    Uint8 entete[2] {static_cast<Uint8>(taille >> 8), static_cast<Uint8>(taille & 0xFF)};
+
+    if(!NET_WriteToStreamSocket(socket, entete, sizeof(entete))) return false;
+    if(!NET_WriteToStreamSocket(socket, donnees, taille)) return false;
+
+    return true;
 }
 
 // Octets reçus mais pas encore découpés en messages complets
@@ -39,10 +49,12 @@ struct Reception {
 };
 
 // Si "reception" contient au moins un message COMPLET, le copie dans dest,
-// le retire de reception, et renvoie sa taille. Sinon, renvoie -1.
+// le retire de reception, et renvoie sa taille.
+// Renvoie -1 si le message n'est pas encore complet (il faut recevoir la suite),
+// et -2 si le message annoncé est trop gros pour dest (protocole non respecté).
 static int extraireMessage(Reception& reception, void* dest, int tailleMax)
 {
-    // (étape suivante)
+    // TODO(human)
     (void)reception; (void)dest; (void)tailleMax;
     return -1;
 }
@@ -74,6 +86,10 @@ static int recevoirMessage(NET_StreamSocket* socket, Reception& reception, void*
     for (;;) {
         const int taille = extraireMessage(reception, dest, tailleMax);
         if (taille >= 0) return taille;               // un message complet était déjà là
+        if (taille == -2) {
+            SDL_Log("Message invalide (trop gros) : on coupe la connexion");
+            return -1;
+        }
         if (!recevoirOctets(socket, reception)) return -1;  // sinon, attendre la suite
     }
 }
