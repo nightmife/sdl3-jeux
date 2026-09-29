@@ -57,12 +57,31 @@ struct Jeu {
     std::mt19937        rng;      // générateur aléatoire propre au jeu
 };
 
+// ---------------------------------------------------------------------------
+// TRICHES 😈 : elles ne profitent qu'au joueur 0 (l'hôte). Elles vivent dans
+// la LOGIQUE, donc chez l'hôte seulement : c'est lui qui a l'autorité, et les
+// clients ne font que recevoir le résultat. Un client ne peut pas tricher.
+// ---------------------------------------------------------------------------
+struct Triches {
+    bool turbo        = false;  // l'hôte va 2 fois plus vite
+    bool grandesMains = false;  // l'hôte ramasse de plus loin (hitbox agrandie, sprite normal)
+    bool aimant       = false;  // les pièces proches glissent vers l'hôte
+    bool gel          = false;  // les autres joueurs ne peuvent plus bouger
+    bool inversion    = false;  // les commandes des autres sont inversées
+};
+
 // Nouvelle partie avec nbJoueurs joueurs (entre 1 et MAX_JOUEURS)
 void initialiser(Jeu& jeu, unsigned graine, int nbJoueurs);
 
 // Avance le jeu d'un pas. entrees[i] = ce que veut faire le joueur i
 // (entrees doit contenir exactement un élément par joueur).
-void mettreAJour(Jeu& jeu, const std::vector<Entrees>& entrees, float dt);
+// "triches" a une valeur par défaut : sans triche, on appelle comme avant.
+void mettreAJour(Jeu& jeu, const std::vector<Entrees>& entrees, float dt,
+                 const Triches& triches = Triches{});
+
+// Triche instantanée "pluie de pièces" : toutes les pièces viennent sur le
+// joueur 0, qui les ramassera toutes au pas suivant
+void pluieDePieces(Jeu& jeu);
 
 // Somme des scores de tous les joueurs (pratique pour détecter un ramassage)
 int scoreTotal(const Jeu& jeu);

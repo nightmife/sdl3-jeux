@@ -41,7 +41,7 @@ static void genererPieces(Jeu& jeu)
 }
 
 // Ton code de déplacement (leçon 2), appliqué à UN joueur
-static void deplacerJoueur(Joueur& joueur, const Entrees& entrees, float dt)
+static void deplacerJoueur(Joueur& joueur, const Entrees& entrees, float dt, float vitesse)
 {
     // 1. Direction voulue. Des if SÉPARÉS (pas de else) : droite + gauche
     //    s'annulent, haut + droite donnent une diagonale.
@@ -61,9 +61,10 @@ static void deplacerJoueur(Joueur& joueur, const Entrees& entrees, float dt)
         dy /= norme;
     }
 
-    // 3. Mouvement : VITESSE est en pixels PAR SECONDE, dt en secondes.
-    joueur.x += VITESSE * dx * dt;
-    joueur.y += VITESSE * dy * dt;
+    // 3. Mouvement : la vitesse est en pixels PAR SECONDE, dt en secondes.
+    //    (d'habitude VITESSE, ou plus si la triche turbo est active)
+    joueur.x += vitesse * dx * dt;
+    joueur.y += vitesse * dy * dt;
 
     // 4. Garder le joueur dans le monde : on BOUGE D'ABORD, puis on CORRIGE
     //    (sinon, avec un grand dt, il pourrait dépasser d'un pas entier).
@@ -93,14 +94,57 @@ void initialiser(Jeu& jeu, unsigned graine, int nbJoueurs)
     genererPieces(jeu);
 }
 
+// Triche "inversion" : haut <-> bas, gauche <-> droite
+static Entrees inverser(const Entrees& e)
+{
+    Entrees r;
+    r.haut   = e.bas;
+    r.bas    = e.haut;
+    r.gauche = e.droite;
+    r.droite = e.gauche;
+    return r;
+}
+
+// Triche "aimant" : les pièces à moins de RAYON pixels glissent vers le joueur
+static void attirerPieces(Jeu& jeu, const Joueur& cible, float dt)
+{
+    constexpr float RAYON = 300.0f;             // portée de l'aimant
+    constexpr float VITESSE_AIMANT = 350.0f;    // vitesse des pièces attirées, en px/s
+    const float cx = cible.x + cible.taille / 2.0f;  // centre du joueur
+    const float cy = cible.y + cible.taille / 2.0f;
+    for (Piece& p : jeu.pieces) {
+        const float dx = cx - (p.x + p.taille / 2.0f);  // vecteur pièce -> joueur
+        const float dy = cy - (p.y + p.taille / 2.0f);
+        const float distance = std::sqrt(dx * dx + dy * dy);
+        if (distance > 0 && distance < RAYON) {
+            // On normalise (comme pour le joueur) pour avancer à vitesse constante
+            p.x += dx / distance * VITESSE_AIMANT * dt;
+            p.y += dy / distance * VITESSE_AIMANT * dt;
+        }
+    }
+}
+
 // Avance le jeu d'un pas. entrees[i] = ce que veut faire le joueur i.
-void mettreAJour(Jeu& jeu, const std::vector<Entrees>& entrees, float dt)
+void mettreAJour(Jeu& jeu, const std::vector<Entrees>& entrees, float dt, const Triches& triches)
 {
     // 1. Chaque joueur se déplace selon SES entrées
     //    (les joueurs partis ne bougent plus)
-    for (size_t i = 0; i < jeu.joueurs.size() && i < entrees.size(); ++i)
-        if (jeu.joueurs[i].actif)
-            deplacerJoueur(jeu.joueurs[i], entrees[i], dt);
+    for (size_t i = 0; i < jeu.joueurs.size() && i < entrees.size(); ++i) {
+        if (!jeu.joueurs[i].actif) continue;
+        const bool estHote = (i == 0);
+
+        if (!estHote && triches.gel) continue;  // triche gel : les autres sont figés
+
+        // Triche inversion : on modifie les entrées AVANT de les appliquer
+        const Entrees e = (!estHote && triches.inversion) ? inverser(entrees[i]) : entrees[i];
+        // Triche turbo : l'hôte va 2 fois plus vite
+        const float vitesse = (estHote && triches.turbo) ? 2.0f * VITESSE : VITESSE;
+        deplacerJoueur(jeu.joueurs[i], e, dt, vitesse);
+    }
+
+    // Triche aimant : les pièces proches de l'hôte glissent vers lui
+    if (triches.aimant && !jeu.joueurs.empty() && jeu.joueurs[0].actif)
+        attirerPieces(jeu, jeu.joueurs[0], dt);
 
     // 2. Ramassage : chaque pièce touchée disparaît et rapporte 1 point
     //    au joueur qui l'a touchée. Swap-and-pop comme en solo, avec une
@@ -110,7 +154,15 @@ void mettreAJour(Jeu& jeu, const std::vector<Entrees>& entrees, float dt)
         bool ramassee = false;  // "messager" entre la boucle intérieure et l'extérieure
         for (Joueur &joueur : jeu.joueurs) {  // & : on modifie le score du VRAI joueur
             if (!joueur.actif) continue;       // un joueur parti ne ramasse plus rien
-            if (collision(joueur.hitbox(), jeu.pieces[i].hitbox())) {
+            // Triche grandes mains : la hitbox de l'hôte (joueurs[0]) est agrandie de
+            // MARGE pixels de chaque côté. On compare les ADRESSES pour savoir si
+            // "joueur" est l'hôte (le foreach ne donne pas l'indice).
+            Rect zone = joueur.hitbox();
+            if (triches.grandesMains && &joueur == &jeu.joueurs[0]) {
+                constexpr float MARGE = 60.0f;
+                zone = Rect{zone.x - MARGE, zone.y - MARGE, zone.w + 2 * MARGE, zone.h + 2 * MARGE};
+            }
+            if (collision(zone, jeu.pieces[i].hitbox())) {
                 joueur.score += 1;
                 ramassee = true;
                 // break : la pièce est prise, on arrête de chercher. Sans lui, deux
@@ -136,4 +188,16 @@ int scoreTotal(const Jeu& jeu)
     int total = 0;
     for (const Joueur& j : jeu.joueurs) total += j.score;
     return total;
+}
+
+void pluieDePieces(Jeu& jeu)
+{
+    if (jeu.joueurs.empty() || !jeu.joueurs[0].actif) return;
+    const Joueur& hote = jeu.joueurs[0];
+    // Chaque pièce est posée au centre de l'hôte : au prochain pas, le
+    // ramassage les lui donnera toutes (c'est la logique normale qui compte les points)
+    for (Piece& p : jeu.pieces) {
+        p.x = hote.x + (hote.taille - p.taille) / 2.0f;
+        p.y = hote.y + (hote.taille - p.taille) / 2.0f;
+    }
 }

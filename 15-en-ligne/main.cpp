@@ -6,6 +6,7 @@
 // Étape C2 : l'hôte prévient chaque client que la partie commence (message Debut).
 // Étape C3 : le client envoie ses touches, l'hôte calcule tout et renvoie l'état.
 // Étape C4 : gérer les départs (joueur qui quitte, hôte qui ferme).
+// Bonus 😈 : des triches pour l'hôte (voir gererTriches).
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -61,6 +62,11 @@ struct AppState {
     Hote          hote;
     Client        client;
     int           monIndice = 0;  // mon joueur dans jeu.joueurs (0 pour l'hôte)
+
+    // Triches (hôte seulement)
+    Triches       triches;
+    bool          trichesDeverrouillees = false;  // il faut d'abord taper le mot secret
+    std::string   dernieresLettres;               // les dernières lettres tapées
     std::string   adresseSaisie = "127.0.0.1";
 };
 
@@ -208,6 +214,48 @@ static void envoyerEtat(AppState* state)
         if (j.socket) envoyerMessage(j.socket, message, taille);  // pas aux joueurs partis
 }
 
+// Mot à taper (en pleine partie, en tant qu'hôte) pour (dé)verrouiller les triches.
+// Aucune de ses lettres n'est une touche de déplacement (ZQSD / WASD).
+static constexpr const char* MOT_SECRET = "triche";
+
+// HÔTE, en partie : mot secret puis combinaisons Ctrl + Maj + lettre
+static void gererTriches(AppState* state, const SDL_KeyboardEvent& touche)
+{
+    // 1. Mot secret. Keycode = la LETTRE (peu importe AZERTY/QWERTY) ; pour les
+    //    lettres, SDL utilise leur code ASCII en minuscule, d'où le cast en char.
+    if (touche.key >= SDLK_A && touche.key <= SDLK_Z) {
+        state->dernieresLettres += static_cast<char>(touche.key);
+        const size_t n = SDL_strlen(MOT_SECRET);
+        if (state->dernieresLettres.size() > n)  // ne garder que les n dernières lettres
+            state->dernieresLettres.erase(0, state->dernieresLettres.size() - n);
+        if (state->dernieresLettres == MOT_SECRET) {
+            state->trichesDeverrouillees = !state->trichesDeverrouillees;
+            if (!state->trichesDeverrouillees) state->triches = Triches{};  // tout couper
+            SDL_Log("Triches %s", state->trichesDeverrouillees ? "DÉVERROUILLÉES 😈" : "verrouillées");
+            state->dernieresLettres.clear();
+            return;
+        }
+    }
+
+    // 2. Combinaisons : Ctrl + Maj + une lettre, seulement si déverrouillé
+    if (!state->trichesDeverrouillees) return;
+    if (!(touche.mod & SDL_KMOD_CTRL) || !(touche.mod & SDL_KMOD_SHIFT)) return;
+
+    Triches& t = state->triches;
+    switch (touche.key) {
+    case SDLK_T: t.turbo        = !t.turbo;        break;  // Turbo
+    case SDLK_G: t.grandesMains = !t.grandesMains; break;  // Grandes mains
+    case SDLK_M: t.aimant       = !t.aimant;       break;  // aiMant
+    case SDLK_F: t.gel          = !t.gel;          break;  // Freeze
+    case SDLK_I: t.inversion    = !t.inversion;    break;  // Inversion
+    case SDLK_P: pluieDePieces(state->jeu);        break;  // Pluie de pièces (instantané)
+    case SDLK_0: t = Triches{};                    break;  // tout désactiver
+    default: return;
+    }
+    SDL_Log("Triches : turbo=%d mains=%d aimant=%d gel=%d inversion=%d",
+            t.turbo, t.grandesMains, t.aimant, t.gel, t.inversion);
+}
+
 // Revenir au menu en coupant proprement le réseau
 static void retourMenu(AppState* state)
 {
@@ -336,6 +384,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 
     case Ecran::Partie:
         if (touche == SDL_SCANCODE_ESCAPE) retourMenu(state);
+        if (state->estHote) gererTriches(state, event->key);  // seul l'hôte peut tricher
         break;
     }
     return SDL_APP_CONTINUE;
@@ -414,7 +463,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         state->accumulateur += dt;
         bool aAvance = false;
         while (state->accumulateur >= PAS_FIXE) {
-            mettreAJour(state->jeu, entrees, PAS_FIXE);
+            mettreAJour(state->jeu, entrees, PAS_FIXE, state->triches);
             state->accumulateur -= PAS_FIXE;
             aAvance = true;
         }
@@ -448,6 +497,20 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             dessinerTexteCentre(state->renderer, state->ligne1.texture, l1.c_str(), 330);
             dessinerTexteCentre(state->renderer, state->ligne2.texture, l2.c_str(), 390);
         }
+    }
+
+    // Petit rappel des triches actives, en bas à gauche, UNIQUEMENT sur l'écran
+    // de l'hôte : c'est dessiné localement, jamais envoyé sur le réseau.
+    if (state->estHote && state->ecran == Ecran::Partie && state->trichesDeverrouillees) {
+        const Triches& t = state->triches;
+        std::string actives = "*";
+        if (t.turbo)        actives += " turbo";
+        if (t.grandesMains) actives += " mains";
+        if (t.aimant)       actives += " aimant";
+        if (t.gel)          actives += " gel";
+        if (t.inversion)    actives += " inversion";
+        SDL_SetRenderDrawColor(state->renderer, 120, 120, 150, 255);  // discret
+        SDL_RenderDebugText(state->renderer, 10, HAUTEUR_MONDE - 18, actives.c_str());
     }
 
     SDL_RenderPresent(state->renderer);
