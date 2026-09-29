@@ -54,10 +54,18 @@ struct Reception {
 // et -2 si le message annoncé est trop gros pour dest (protocole non respecté).
 static int extraireMessage(Reception& reception, void* dest, int tailleMax)
 {
-    // TODO(human)
-    (void)reception; (void)dest; (void)tailleMax;
-    return -1;
-}
+    if (reception.nb < 2) return -1;
+
+    int taille = (reception.octets[0] << 8) | reception.octets[1];
+    if (taille > tailleMax) return -2;
+    else if (taille + 2 > reception.nb) return -1;
+    
+    SDL_memcpy(dest, reception.octets + 2, taille);
+    SDL_memmove(reception.octets, reception.octets + (2 + taille), reception.nb - (2 + taille));
+ 
+    reception.nb -= taille + 2;
+    return taille;
+} 
 
 // Attend puis ajoute à "reception" les octets arrivés. False si la connexion est cassée.
 static bool recevoirOctets(NET_StreamSocket* socket, Reception& reception)
