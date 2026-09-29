@@ -9,6 +9,17 @@ find_package(SDL3 REQUIRED CONFIG)
 find_package(SDL3_image REQUIRED CONFIG)
 find_package(SDL3_ttf REQUIRED CONFIG)
 
+# SDL3_net n'est pas packagée sur Arch : CMake télécharge la version 3.2.0
+# et la compile avec le projet (en bibliothèque statique, sans les exemples).
+include(FetchContent)
+set(SDLNET_SAMPLES OFF)
+set(BUILD_SHARED_LIBS OFF)
+FetchContent_Declare(SDL3_net
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL_net.git
+    GIT_TAG        release-3.2.0
+    GIT_SHALLOW    TRUE)
+FetchContent_MakeAvailable(SDL3_net)
+
 # Une leçon = un sous-dossier = un exécutable
 add_subdirectory(01-fenetre)
 add_subdirectory(01b-classique)
@@ -20,3 +31,4 @@ add_subdirectory(06-texte)
 add_subdirectory(07-son)
 add_subdirectory(08-etats)
 add_subdirectory(09-pas-fixe)
+add_subdirectory(10-chat)
