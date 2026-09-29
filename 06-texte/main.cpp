@@ -39,6 +39,9 @@ static Entrees lireEntrees()
 {
     const bool* clavier = SDL_GetKeyboardState(nullptr);
     Entrees e;
+    // Un bool se copie directement : pas besoin de if.
+    // C'est la SEULE fonction qui connaît les touches : la logique ne voit que
+    // des intentions (haut, bas...), qui pourront venir du réseau plus tard.
     e.haut = clavier[SDL_SCANCODE_W];
     e.bas = clavier[SDL_SCANCODE_S];
     e.gauche = clavier[SDL_SCANCODE_A];
@@ -69,11 +72,15 @@ static SDL_Texture* chargerTexture(SDL_Renderer* renderer, const char* nom)
 static void mettreAJourTexteScore(SDL_Renderer* renderer, TTF_Font* police,
                                   TexteCache& cache, int score)
 {
+    // 1. Sorties anticipées : pas de police (dessiner() utilisera le plan B),
+    //    ou texte inchangé (la texture actuelle est encore bonne : c'est le CACHE)
     if (police == nullptr) return;
     if (cache.valeur == score) return;
 
     std::string texte = "Score: " + std::to_string(score);
  
+    // 2. Texte -> surface (image en RAM, dessinée lettre par lettre : coûteux,
+    //    d'où le cache). Le 0 = "le texte se termine par '\0'".
     SDL_Surface *surface = TTF_RenderText_Blended(police, texte.c_str(), 0, SDL_Color{255, 255, 255, 255});
     
     if (surface == nullptr) {
@@ -81,6 +88,8 @@ static void mettreAJourTexteScore(SDL_Renderer* renderer, TTF_Font* police,
         return;
     }
 
+    // 3. Surface -> texture (image sur le GPU). On RANGE le résultat : sans ça,
+    //    la texture serait perdue et fuirait. La surface ne sert plus ensuite.
     SDL_Texture *nouvelle =  SDL_CreateTextureFromSurface(renderer, surface);
     SDL_DestroySurface(surface);
     if (nouvelle == nullptr) {
@@ -88,6 +97,9 @@ static void mettreAJourTexteScore(SDL_Renderer* renderer, TTF_Font* police,
         return;
     }
     
+    // 4. Remplacement SÛR : on ne détruit l'ancienne texture qu'une fois la
+    //    nouvelle créée avec succès (si ça échoue, l'ancienne reste affichée et
+    //    on réessaiera à la frame suivante puisque la valeur n'est pas mise à jour).
     if (cache.texture) SDL_DestroyTexture(cache.texture);
     cache.texture = nouvelle;
     cache.valeur = score; 
@@ -101,14 +113,20 @@ static void dessiner(SDL_Renderer* renderer, const Textures& textures,
     SDL_RenderClear(renderer);
 
     // Pièces puis joueur, avec leur texture
+    // Couleur de SECOURS réglée une fois avant la boucle : elle ne sert que si
+    // la texture manque (SDL_RenderTexture, lui, ignore la couleur de dessin).
     SDL_SetRenderDrawColor(renderer, 255, 200, 0, 255);
     for (const Piece &p : jeu.pieces) {
+        // dstrect = où et à quelle taille dessiner ; srcrect = nullptr = toute l'image.
+        // Plan B si l'image n'a pas pu être chargée : un rectangle de couleur.
         SDL_FRect rect{p.x, p.y, p.taille, p.taille};
         if (textures.piece == nullptr) { SDL_RenderFillRect(renderer, &rect); }
         else { SDL_RenderTexture(renderer, textures.piece, nullptr, &rect); }
     }
+    // Couleur de secours du joueur (sinon le plan B serait dessiné avec la
+    // couleur précédente : le renderer est une machine à états)
     SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-    const Joueur &j = jeu.joueur;
+    const Joueur &j = jeu.joueur;  // const : dessiner ne modifie jamais le jeu
     SDL_FRect rect{j.x, j.y, j.taille, j.taille};
     if (textures.joueur == nullptr) { SDL_RenderFillRect(renderer, &rect); }
     else { SDL_RenderTexture(renderer, textures.joueur, nullptr, &rect); }
@@ -183,6 +201,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 {
     auto* state = static_cast<AppState*>(appstate);
 
+    // DELTA TIME : temps écoulé depuis la frame précédente, en secondes.
+    // - Horloge lue UNE fois (sinon le temps entre deux lectures serait perdu).
+    // - Uint64 et pas float : un float arrondirait ce grand nombre de ns.
+    // - Soustraction en entier (exacte), PUIS conversion en float, PUIS division
+    //   en float (une division entière donnerait 0).
     Uint64 maintenant = SDL_GetTicksNS();
     float dt = static_cast<float>(maintenant - state->dernierTemps) / SDL_NS_PER_SECOND;
     state->dernierTemps = maintenant;

@@ -20,6 +20,9 @@ static Entrees lireEntrees()
 {
     const bool* clavier = SDL_GetKeyboardState(nullptr);
     Entrees e;
+    // Un bool se copie directement : pas besoin de if.
+    // C'est la SEULE fonction qui connaît les touches : la logique ne voit que
+    // des intentions (haut, bas...), qui pourront venir du réseau plus tard.
     e.haut = clavier[SDL_SCANCODE_W];
     e.bas = clavier[SDL_SCANCODE_S];
     e.gauche = clavier[SDL_SCANCODE_A];
@@ -94,6 +97,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 {
     auto* state = static_cast<AppState*>(appstate);
 
+    // DELTA TIME : temps écoulé depuis la frame précédente, en secondes.
+    // - Horloge lue UNE fois (sinon le temps entre deux lectures serait perdu).
+    // - Uint64 et pas float : un float arrondirait ce grand nombre de ns.
+    // - Soustraction en entier (exacte), PUIS conversion en float, PUIS division
+    //   en float (une division entière donnerait 0).
     Uint64 maintenant = SDL_GetTicksNS();
     float dt = static_cast<float>(maintenant - state->dernierTemps) / SDL_NS_PER_SECOND;
     state->dernierTemps = maintenant;

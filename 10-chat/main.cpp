@@ -23,6 +23,7 @@ constexpr Uint16 PORT = 7777;
 // Envoie le texte (sans le '\0' final). Renvoie false si la connexion est cassée.
 static bool envoyerTexte(NET_StreamSocket* socket, const char* texte)
 {
+    // strlen ne compte pas le '\0' : on envoie juste les lettres
     return NET_WriteToStreamSocket(socket, texte, static_cast<int>(SDL_strlen(texte)));
 }
 
@@ -33,10 +34,14 @@ static bool recevoirTexte(NET_StreamSocket* socket, char* tampon, int tailleTamp
     void *aSurveillerClient[] = { socket };
     NET_WaitUntilInputAvailable(aSurveillerClient, 1, -1);
     
+    // n = nombre d'octets reçus (0 = rien pour l'instant, -1 = connexion cassée).
+    // On lit au plus tailleTampon - 1 octets pour garder une case pour le '\0'.
+    // (tailleTampon est fourni par l'appelant : ici, tampon est un POINTEUR,
+    //  et sizeof(tampon) vaudrait 8, pas la taille du tableau !)
     int n = NET_ReadFromStreamSocket(socket, tampon, tailleTampon - 1);
    
     if (n > 0) {
-         tampon[n] = '\0';
+         tampon[n] = '\0';  // les octets reçus deviennent une vraie chaîne C
          return true;
     } else if (n < 0) SDL_Log("Connexion perdu: %s", SDL_GetError());
     return false;
@@ -47,6 +52,8 @@ static bool recevoirTexte(NET_StreamSocket* socket, char* tampon, int tailleTamp
 // ---------------------------------------------------------------------------
 static bool lancerHote()
 {
+    // Ouvrir la "salle" : écouter sur le port PORT (nullptr = toutes les
+    // adresses de la machine). Le serveur ne sert qu'à DÉCROCHER, jamais à parler.
     NET_Server *serveur = NET_CreateServer(nullptr, PORT, 0);
     if (serveur == nullptr) {
         SDL_Log("Impossible d'ouvrir la salle: %s", SDL_GetError());
@@ -55,9 +62,14 @@ static bool lancerHote()
     }
     SDL_Log("Salle ouverte sur le port %d", PORT);
 
+    // Attendre qu'un client frappe à la porte (-1 = sans limite de temps).
+    // Bloquant : acceptable dans un programme terminal, INTERDIT dans le jeu.
     void *aSurveiller[] = { serveur };
     NET_WaitUntilInputAvailable(aSurveiller, 1, -1);
 
+    // Décrocher : c'est NET_AcceptClient qui CRÉE le socket du client (on lui
+    // passe l'adresse de notre pointeur pour qu'il le remplisse).
+    // Deux cas d'échec : une erreur (false), ou finalement personne (nullptr).
     NET_StreamSocket *client = nullptr;
     if (!NET_AcceptClient(serveur, &client) || client == nullptr) {
         SDL_Log("Aucun joueur");
@@ -67,6 +79,7 @@ static bool lancerHote()
         return false;
     }
 
+    // Adresse du client. La doc impose de la libérer avec NET_UnrefAddress.
     NET_Address *adr = NET_GetStreamSocketAddress(client);
 
     SDL_Log("Un joueur s'est connecté depuis %s", NET_GetAddressString(adr));

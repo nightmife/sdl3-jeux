@@ -24,17 +24,25 @@ SDL_AppResult SDL_AppInit(void** appstate, int /*argc*/, char* /*argv*/[])
     auto* state = new AppState{};
     *appstate = state;  // SDL garde ce pointeur et nous le rendra partout
 
+    // Démarre le sous-système vidéo (fenêtres, rendu, clavier/souris).
+    // En SDL3, les fonctions renvoient un bool : false = échec, et la raison
+    // se récupère avec SDL_GetError() (à ne lire QUE juste après un échec).
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_Log("Erreur, %s non initialiser.", SDL_GetError());
+        // Le message dit QUELLE étape a raté, SDL_GetError() dit POURQUOI
+        SDL_Log("SDL_Init a échoué : %s", SDL_GetError());
+        // SDL_APP_FAILURE : SDL arrête tout proprement (et appelle quand même
+        // SDL_AppQuit, qui libérera "state" : pas de fuite mémoire)
         return SDL_APP_FAILURE;
     }
 
-    if (!SDL_CreateWindowAndRenderer("titre", 1280, 720, 0, &state->window, &state->renderer)){
-        SDL_Log("Erreur, %s non initialiser.", SDL_GetError());
+    // Crée la fenêtre ET son renderer (l'objet qui dessine dedans) d'un coup.
+    // On passe l'ADRESSE de nos deux pointeurs pour que SDL les remplisse.
+    if (!SDL_CreateWindowAndRenderer("titre", 1280, 720, 0, &state->window, &state->renderer)) {
+        SDL_Log("Création de la fenêtre impossible : %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
-
+    // Tout est prêt : SDL peut commencer à appeler SDL_AppIterate à chaque frame
     return SDL_APP_CONTINUE;
 }
 

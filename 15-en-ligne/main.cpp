@@ -147,7 +147,10 @@ static void envoyerDebut(AppState* state)
 // HÔTE : lit ce que chaque joueur distant a envoyé (ses touches)
 static void traiterMessagesHote(AppState* state)
 {
+    // Miroir de traiterMessagesClient, pour CHAQUE joueur connecté.
+    // & : on modifie la reception et les entrées du VRAI joueur, pas d'une copie.
     for (JoueurDistant &j : state->hote.joueurs) {
+        // 1. Récupérer ce qui est arrivé (sans attendre)
         if (!lireDisponible(j.socket, j.reception)) {
             SDL_Log("Un joueur s'est déconnecté");
             continue;
@@ -155,6 +158,9 @@ static void traiterMessagesHote(AppState* state)
 
         std::uint8_t message[TAILLE_MAX_MESSAGE];
         int taille;
+        // 2. Sortir TOUS les messages complets (un message à moitié arrivé reste
+        //    dans la reception jusqu'à la prochaine frame). Les touches décodées
+        //    vont directement dans j.entrees, où la logique les récupère.
         while ((taille = extraireMessage(j.reception, message, sizeof(message))) >= 0) {
             if (!decoderEntrees(message, taille, j.entrees)) {
                 SDL_Log("Message inconnu d'un joueur (%d octets)", taille);
@@ -335,6 +341,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 {
     auto* state = static_cast<AppState*>(appstate);
 
+    // DELTA TIME : temps écoulé depuis la frame précédente, en secondes.
+    // - Horloge lue UNE fois (sinon le temps entre deux lectures serait perdu).
+    // - Uint64 et pas float : un float arrondirait ce grand nombre de ns.
+    // - Soustraction en entier (exacte), PUIS conversion en float, PUIS division
+    //   en float (une division entière donnerait 0).
     const Uint64 maintenant = SDL_GetTicksNS();
     float dt = static_cast<float>(maintenant - state->dernierTemps) / SDL_NS_PER_SECOND;
     state->dernierTemps = maintenant;

@@ -34,8 +34,15 @@ static bool envoyerMessage(NET_StreamSocket* socket, const void* donnees, int ta
         return false;
     }
 
+    // En-tête = la taille sur 2 octets, poids FORT d'abord (« ordre réseau »,
+    // big-endian) : >> 8 ramène l'octet de poids fort à droite, & 0xFF garde
+    // les 8 bits de droite. Les accolades interdisent les conversions avec
+    // perte, d'où les static_cast explicites (on VEUT ne garder que 8 bits).
     Uint8 entete[2] {static_cast<Uint8>(taille >> 8), static_cast<Uint8>(taille & 0xFF)};
 
+    // Envoyer l'en-tête (EXACTEMENT 2 octets : en envoyer plus lirait la mémoire
+    // au-delà du tableau), puis les données. Deux envois ne posent pas de
+    // problème : TCP colle tout, le receveur verra [taille][données].
     if(!NET_WriteToStreamSocket(socket, entete, sizeof(entete))) return false;
     if(!NET_WriteToStreamSocket(socket, donnees, taille)) return false;
 
@@ -54,16 +61,24 @@ struct Reception {
 // et -2 si le message annoncé est trop gros pour dest (protocole non respecté).
 static int extraireMessage(Reception& reception, void* dest, int tailleMax)
 {
+    // 1. En-tête complet ? Sinon, attendre la suite.
     if (reception.nb < 2) return -1;
 
+    // 2. Relire la taille (calcul inverse de l'envoi), puis vérifier :
+    //    - JAMAIS confiance à une taille reçue : trop gros pour dest = -2 ;
+    //    - données pas encore toutes arrivées (message coupé) = -1.
     int taille = (reception.octets[0] << 8) | reception.octets[1];
     if (taille > tailleMax) return -2;
     else if (taille + 2 > reception.nb) return -1;
     
+    // 3. Copier le message (après l'en-tête) vers dest
     SDL_memcpy(dest, reception.octets + 2, taille);
+    // 4. Retirer ce message du tampon : ramener au début ce qui suit (peut-être
+    //    le début du message suivant, collé). memmove et pas memcpy : source et
+    //    destination sont dans le même tableau et se chevauchent.
     SDL_memmove(reception.octets, reception.octets + (2 + taille), reception.nb - (2 + taille));
  
-    reception.nb -= taille + 2;
+    reception.nb -= taille + 2;  // le message occupait l'en-tête (2) + les données
     return taille;
 } 
 
@@ -78,6 +93,9 @@ static bool recevoirOctets(NET_StreamSocket* socket, Reception& reception)
         SDL_Log("Tampon de réception plein : message trop gros ?");
         return false;
     }
+    // Ajouter à la SUITE de ce qui est déjà dans le tampon (un message peut
+    // arriver en plusieurs morceaux). NET_ReadFromStreamSocket n'attend jamais :
+    // elle renvoie 0 s'il n'y a rien, -1 si la connexion est cassée.
     const int n = NET_ReadFromStreamSocket(socket, reception.octets + reception.nb, placeLibre);
     if (n < 0) {
         SDL_Log("Connexion perdue : %s", SDL_GetError());
@@ -121,6 +139,8 @@ static bool recevoirTexte(NET_StreamSocket* socket, Reception& reception, char* 
 // ---------------------------------------------------------------------------
 static bool lancerHote()
 {
+    // Ouvrir la "salle" : écouter sur le port PORT (nullptr = toutes les
+    // adresses de la machine). Le serveur ne sert qu'à DÉCROCHER, jamais à parler.
     NET_Server *serveur = NET_CreateServer(nullptr, PORT, 0);
     if (serveur == nullptr) {
         SDL_Log("Impossible d'ouvrir la salle: %s", SDL_GetError());
@@ -129,9 +149,14 @@ static bool lancerHote()
     }
     SDL_Log("Salle ouverte sur le port %d", PORT);
 
+    // Attendre qu'un client frappe à la porte (-1 = sans limite de temps).
+    // Bloquant : acceptable dans un programme terminal, INTERDIT dans le jeu.
     void *aSurveiller[] = { serveur };
     NET_WaitUntilInputAvailable(aSurveiller, 1, -1);
 
+    // Décrocher : c'est NET_AcceptClient qui CRÉE le socket du client (on lui
+    // passe l'adresse de notre pointeur pour qu'il le remplisse).
+    // Deux cas d'échec : une erreur (false), ou finalement personne (nullptr).
     NET_StreamSocket *client = nullptr;
     if (!NET_AcceptClient(serveur, &client) || client == nullptr) {
         SDL_Log("Aucun joueur");
@@ -141,6 +166,7 @@ static bool lancerHote()
         return false;
     }
 
+    // Adresse du client. La doc impose de la libérer avec NET_UnrefAddress.
     NET_Address *adr = NET_GetStreamSocketAddress(client);
 
     SDL_Log("Un joueur s'est connecté depuis %s", NET_GetAddressString(adr));

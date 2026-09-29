@@ -192,9 +192,13 @@ static std::string texteScores(const Jeu& jeu)
 static void mettreAJourTexteScore(SDL_Renderer* renderer, TTF_Font* police,
                                   TexteCache& cache, const std::string& texte)
 {
+    // 1. Sorties anticipées : pas de police (dessiner() utilisera le plan B),
+    //    ou texte inchangé (la texture actuelle est encore bonne : c'est le CACHE)
     if (police == nullptr) return;
     if (cache.texte == texte) return;
  
+    // 2. Texte -> surface (image en RAM, dessinée lettre par lettre : coûteux,
+    //    d'où le cache). Le 0 = "le texte se termine par '\0'".
     SDL_Surface *surface = TTF_RenderText_Blended(police, texte.c_str(), 0, SDL_Color{255, 255, 255, 255});
     
     if (surface == nullptr) {
@@ -202,6 +206,8 @@ static void mettreAJourTexteScore(SDL_Renderer* renderer, TTF_Font* police,
         return;
     }
 
+    // 3. Surface -> texture (image sur le GPU). On RANGE le résultat : sans ça,
+    //    la texture serait perdue et fuirait. La surface ne sert plus ensuite.
     SDL_Texture *nouvelle =  SDL_CreateTextureFromSurface(renderer, surface);
     SDL_DestroySurface(surface);
     if (nouvelle == nullptr) {
@@ -209,6 +215,9 @@ static void mettreAJourTexteScore(SDL_Renderer* renderer, TTF_Font* police,
         return;
     }
     
+    // 4. Remplacement SÛR : on ne détruit l'ancienne texture qu'une fois la
+    //    nouvelle créée avec succès (si ça échoue, l'ancienne reste affichée et
+    //    on réessaiera à la frame suivante puisque la valeur n'est pas mise à jour).
     if (cache.texture) SDL_DestroyTexture(cache.texture);
     cache.texture = nouvelle;
     cache.texte = texte;
@@ -223,8 +232,12 @@ static void dessiner(SDL_Renderer* renderer, const Textures& textures,
     SDL_RenderClear(renderer);
 
     // Pièces puis joueur, avec leur texture
+    // Couleur de SECOURS réglée une fois avant la boucle : elle ne sert que si
+    // la texture manque (SDL_RenderTexture, lui, ignore la couleur de dessin).
     SDL_SetRenderDrawColor(renderer, 255, 200, 0, 255);
     for (const Piece &p : jeu.pieces) {
+        // dstrect = où et à quelle taille dessiner ; srcrect = nullptr = toute l'image.
+        // Plan B si l'image n'a pas pu être chargée : un rectangle de couleur.
         SDL_FRect rect{p.x, p.y, p.taille, p.taille};
         if (textures.piece == nullptr) { SDL_RenderFillRect(renderer, &rect); }
         else { SDL_RenderTexture(renderer, textures.piece, nullptr, &rect); }
@@ -315,7 +328,9 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
     if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat) {
         SDL_Scancode touche = event->key.scancode;
 
-        // Transitions entre écrans
+        // Transitions entre écrans : on regarde D'ABORD où on est (le switch),
+        // PUIS la touche. La même touche (Échap) fait donc des choses différentes
+        // selon l'écran. || seulement pour des touches qui mènent au MÊME écran.
         switch (state->ecran) {
         case Ecran::Menu:
             if (touche == SDL_SCANCODE_RETURN) {
@@ -341,6 +356,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 {
     auto* state = static_cast<AppState*>(appstate);
 
+    // DELTA TIME : temps écoulé depuis la frame précédente, en secondes.
+    // - Horloge lue UNE fois (sinon le temps entre deux lectures serait perdu).
+    // - Uint64 et pas float : un float arrondirait ce grand nombre de ns.
+    // - Soustraction en entier (exacte), PUIS conversion en float, PUIS division
+    //   en float (une division entière donnerait 0).
     Uint64 maintenant = SDL_GetTicksNS();
     float dt = static_cast<float>(maintenant - state->dernierTemps) / SDL_NS_PER_SECOND;
     state->dernierTemps = maintenant;
@@ -352,8 +372,13 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         const int scoreAvant = scoreTotal(state->jeu);
 
         // Avancer la logique par pas fixes
+        // Plafond anti « spirale de la mort » : après un gel de 2 s, on ne veut pas
+        // enchaîner 120 pas d'un coup (ce qui ferait encore plus ramer).
         if (dt > 0.25f) dt = 0.25f;
-        
+
+        // PAS DE TEMPS FIXE (la "tirelire") : on accumule le temps réel, et on le
+        // dépense par pas identiques de PAS_FIXE (1/60 s). Tous les écrans (60 Hz,
+        // 144 Hz, PC lent) font donc exactement les mêmes calculs : déterminisme.
         state->accumulateur += dt;
 
         while (state->accumulateur >= PAS_FIXE) {

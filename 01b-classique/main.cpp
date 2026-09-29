@@ -38,15 +38,21 @@ int main(int /*argc*/, char* /*argv*/[])
         return 1;
     }
 
+    // LA boucle de jeu : un tour = une frame.
+    // "running" passe à false quand on veut quitter ; on finit alors le tour
+    // en cours puis on sort (un break ne sortirait que de la boucle intérieure).
     bool running = true;
     while (running) {
+        // 1. Vider TOUTE la file d'événements : entre deux frames il peut y en
+        //    avoir 0, 1 ou 50. SDL_PollEvent en retire un à chaque appel et
+        //    renvoie false quand la file est vide (sans jamais attendre).
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT) { running = false; }
+            if (event.type == SDL_EVENT_QUIT) { running = false; }  // croix, Alt+F4...
         }
 
+        // 2. Dessiner la frame (équivalent de SDL_AppIterate)
         dessiner(renderer);
-
     }
 
     // Nettoyage : c'est à nous de tout faire, SDL_Quit() compris

@@ -9,8 +9,15 @@ bool envoyerMessage(NET_StreamSocket* socket, const void* donnees, int taille)
         return false;
     }
 
+    // En-tête = la taille sur 2 octets, poids FORT d'abord (« ordre réseau »,
+    // big-endian) : >> 8 ramène l'octet de poids fort à droite, & 0xFF garde
+    // les 8 bits de droite. Les accolades interdisent les conversions avec
+    // perte, d'où les static_cast explicites (on VEUT ne garder que 8 bits).
     Uint8 entete[2] {static_cast<Uint8>(taille >> 8), static_cast<Uint8>(taille & 0xFF)};
 
+    // Envoyer l'en-tête (EXACTEMENT 2 octets : en envoyer plus lirait la mémoire
+    // au-delà du tableau), puis les données. Deux envois ne posent pas de
+    // problème : TCP colle tout, le receveur verra [taille][données].
     if(!NET_WriteToStreamSocket(socket, entete, sizeof(entete))) return false;
     if(!NET_WriteToStreamSocket(socket, donnees, taille)) return false;
 
@@ -23,16 +30,24 @@ bool envoyerMessage(NET_StreamSocket* socket, const void* donnees, int taille)
 // et -2 si le message annoncé est trop gros pour dest (protocole non respecté).
 int extraireMessage(Reception& reception, void* dest, int tailleMax)
 {
+    // 1. En-tête complet ? Sinon, attendre la suite.
     if (reception.nb < 2) return -1;
 
+    // 2. Relire la taille (calcul inverse de l'envoi), puis vérifier :
+    //    - JAMAIS confiance à une taille reçue : trop gros pour dest = -2 ;
+    //    - données pas encore toutes arrivées (message coupé) = -1.
     int taille = (reception.octets[0] << 8) | reception.octets[1];
     if (taille > tailleMax) return -2;
     else if (taille + 2 > reception.nb) return -1;
     
+    // 3. Copier le message (après l'en-tête) vers dest
     SDL_memcpy(dest, reception.octets + 2, taille);
+    // 4. Retirer ce message du tampon : ramener au début ce qui suit (peut-être
+    //    le début du message suivant, collé). memmove et pas memcpy : source et
+    //    destination sont dans le même tableau et se chevauchent.
     SDL_memmove(reception.octets, reception.octets + (2 + taille), reception.nb - (2 + taille));
  
-    reception.nb -= taille + 2;
+    reception.nb -= taille + 2;  // le message occupait l'en-tête (2) + les données
     return taille;
 } 
 
@@ -44,6 +59,9 @@ bool lireDisponible(NET_StreamSocket* socket, Reception& reception)
         return false;
     }
 
+    // Ajouter à la SUITE de ce qui est déjà dans le tampon (un message peut
+    // arriver en plusieurs morceaux). NET_ReadFromStreamSocket n'attend jamais :
+    // elle renvoie 0 s'il n'y a rien, -1 si la connexion est cassée.
     const int n = NET_ReadFromStreamSocket(socket, reception.octets + reception.nb, placeLibre);
     if (n < 0) {
         SDL_Log("Connexion perdue: %s", SDL_GetError());

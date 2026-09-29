@@ -76,29 +76,46 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     // Tableau de bool indexé par scancode : clavier[SDL_SCANCODE_X] vaut true
     // si la touche X est enfoncée EN CE MOMENT.
     const bool* clavier = SDL_GetKeyboardState(nullptr);
-    
+
+    // DELTA TIME : temps écoulé depuis la frame précédente, en secondes.
+    // - On lit l'horloge UNE seule fois, sinon le temps entre deux lectures serait perdu.
+    // - "maintenant" reste un Uint64 : un float n'a que ~7 chiffres significatifs et
+    //   arrondirait de plus en plus grossièrement ce grand nombre de nanosecondes.
+    // - On soustrait d'abord (en entier, exact), on convertit en float ensuite
+    //   (la différence est petite, donc sans perte), puis on divise en float
+    //   (une division entière donnerait 0).
     Uint64 maintenant = SDL_GetTicksNS();
     float dt = static_cast<float>(maintenant - state->dernierTemps) / SDL_NS_PER_SECOND;
-    state->dernierTemps = maintenant;
-    
-    // Déplacement : direction (dx, dy) normalisée, puis vitesse * dt
-    float dx = 0.f, dy = 0.f;
+    state->dernierTemps = maintenant;  // APRÈS le calcul de dt, pour la frame suivante
 
-    if (clavier[SDL_SCANCODE_D]) { dx += 1; } 
+    // Déplacement : direction (dx, dy) normalisée, puis vitesse * dt
+    // 1. Direction voulue. Des if SÉPARÉS (pas de else) : droite + gauche
+    //    s'annulent, haut + droite donnent une diagonale.
+    //    Scancodes = POSITION de la touche (WASD en QWERTY = ZQSD en AZERTY).
+    float dx = 0.f, dy = 0.f;
+    if (clavier[SDL_SCANCODE_D]) { dx += 1; }
     if (clavier[SDL_SCANCODE_A]) { dx -= 1; }
-    if (clavier[SDL_SCANCODE_W]) { dy -= 1; }
+    if (clavier[SDL_SCANCODE_W]) { dy -= 1; }  // y va vers le BAS à l'écran : monter = y diminue
     if (clavier[SDL_SCANCODE_S]) { dy += 1; }
 
+    // 2. Normalisation : en diagonale (1, 1) a une longueur de √2 ≈ 1,41, on irait
+    //    41 % plus vite. On divise par la longueur pour la ramener à 1.
+    //    On teste la NORME (et pas dx + dy, qui vaut 0 pour la diagonale (1, -1)) :
+    //    diviser par 0 donnerait NaN, qui "contamine" tous les calculs suivants.
     float norme = SDL_sqrtf((dx * dx) + (dy * dy));
     if (norme > 0) {
         dx /= norme;
         dy /= norme;
     }
 
+    // 3. Mouvement : VITESSE est en pixels PAR SECONDE, donc × dt (en secondes)
+    //    donne les pixels à parcourir cette frame, quel que soit le nombre de FPS.
     joueur.x += VITESSE * dx * dt;
     joueur.y += VITESSE * dy * dt;
 
-    // Garder le joueur dans la fenêtre
+    // 4. Garder le joueur dans la fenêtre : on BOUGE D'ABORD, puis on CORRIGE.
+    //    (Tester avant de bouger laisserait dépasser d'un pas, énorme si dt est grand.)
+    //    x, y = coin HAUT-GAUCHE, donc le max est la largeur MOINS la taille du joueur.
     if (joueur.x > LARGEUR_FENETRE - joueur.taille) { joueur.x = LARGEUR_FENETRE - joueur.taille; }
     if (joueur.y > HAUTEUR_FENETRE - joueur.taille) { joueur.y = HAUTEUR_FENETRE - joueur.taille; }
     if (joueur.x < 0.f) { joueur.x = 0.f; }

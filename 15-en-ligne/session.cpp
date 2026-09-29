@@ -20,6 +20,9 @@ bool demarrerHote(Hote& hote)
 void accepterNouveauxJoueurs(Hote& hote)
 {
 
+    // Plusieurs joueurs peuvent arriver pendant la même frame : on décroche en
+    // boucle jusqu'à ce qu'il n'y ait plus personne. Aucune attente ici
+    // (surtout pas NET_WaitUntilInputAvailable, qui gèlerait la fenêtre).
     for (;;) {
         NET_StreamSocket *client = nullptr;
 
@@ -28,8 +31,11 @@ void accepterNouveauxJoueurs(Hote& hote)
             return;
         }
         
-        if (client == nullptr) return;
+        if (client == nullptr) return;  // plus personne à la porte pour cette frame
 
+        // Salle pleine : l'hôte est le joueur 1, il reste MAX_JOUEURS - 1 places
+        // (attention à l'erreur de un !). On raccroche au nez du joueur en trop,
+        // puis "continue" pour traiter ceux qui attendent peut-être derrière.
         if (hote.joueurs.size() >= MAX_JOUEURS - 1) {
             SDL_Log("Salle pleine: joueur refusé");
             NET_DestroyStreamSocket(client);
