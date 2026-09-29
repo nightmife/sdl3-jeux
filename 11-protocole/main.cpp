@@ -1,4 +1,6 @@
-// Leçon 6, étape 1 : premier contact réseau avec SDL3_net (TCP).
+// Leçon 6, étape 2 : un PROTOCOLE pour découper le flux TCP en messages.
+// Chaque message est précédé de sa taille sur 2 octets (ordre réseau :
+// octet de poids fort en premier). Plus de messages collés ni d'interblocage.
 //
 // Un seul programme, deux rôles :
 //   ./chat hote              -> ouvre une "salle" et attend qu'un client s'y connecte
@@ -17,29 +19,77 @@
 constexpr Uint16 PORT = 7777;
 
 // ---------------------------------------------------------------------------
-// Outils communs aux deux côtés
+// Protocole : [taille sur 2 octets][données]
 // ---------------------------------------------------------------------------
 
-// Envoie le texte (sans le '\0' final). Renvoie false si la connexion est cassée.
-static bool envoyerTexte(NET_StreamSocket* socket, const char* texte)
+// Taille maximale des données d'un message (sans l'en-tête de 2 octets)
+constexpr int TAILLE_MAX_MESSAGE = 1024;
+
+// Envoie un message : d'abord sa taille sur 2 octets (poids fort en premier),
+// puis les données. Renvoie false si la connexion est cassée ou si c'est trop long.
+static bool envoyerMessage(NET_StreamSocket* socket, const void* donnees, int taille)
 {
-    return NET_WriteToStreamSocket(socket, texte, static_cast<int>(SDL_strlen(texte)));
+    // TODO(human)
 }
 
-// Attend un message, le copie dans tampon (qui peut contenir tailleTampon octets)
-// et le termine par '\0'. Renvoie true si un message a été reçu.
-static bool recevoirTexte(NET_StreamSocket* socket, char* tampon, int tailleTampon)
+// Octets reçus mais pas encore découpés en messages complets
+struct Reception {
+    Uint8 octets[4 * (2 + TAILLE_MAX_MESSAGE)];
+    int   nb = 0;  // nombre d'octets valides au début de "octets"
+};
+
+// Si "reception" contient au moins un message COMPLET, le copie dans dest,
+// le retire de reception, et renvoie sa taille. Sinon, renvoie -1.
+static int extraireMessage(Reception& reception, void* dest, int tailleMax)
 {
-    void *aSurveillerClient[] = { socket };
-    NET_WaitUntilInputAvailable(aSurveillerClient, 1, -1);
-    
-    int n = NET_ReadFromStreamSocket(socket, tampon, tailleTampon - 1);
-   
-    if (n > 0) {
-         tampon[n] = '\0';
-         return true;
-    } else if (n < 0) SDL_Log("Connexion perdu: %s", SDL_GetError());
-    return false;
+    // (étape suivante)
+    (void)reception; (void)dest; (void)tailleMax;
+    return -1;
+}
+
+// Attend puis ajoute à "reception" les octets arrivés. False si la connexion est cassée.
+static bool recevoirOctets(NET_StreamSocket* socket, Reception& reception)
+{
+    void* aSurveiller[] = { socket };
+    NET_WaitUntilInputAvailable(aSurveiller, 1, -1);
+
+    const int placeLibre = static_cast<int>(sizeof(reception.octets)) - reception.nb;
+    if (placeLibre == 0) {
+        SDL_Log("Tampon de réception plein : message trop gros ?");
+        return false;
+    }
+    const int n = NET_ReadFromStreamSocket(socket, reception.octets + reception.nb, placeLibre);
+    if (n < 0) {
+        SDL_Log("Connexion perdue : %s", SDL_GetError());
+        return false;
+    }
+    reception.nb += n;
+    return true;
+}
+
+// Renvoie le prochain message complet (sa taille), en attendant autant qu'il faut.
+// -1 si la connexion est cassée.
+static int recevoirMessage(NET_StreamSocket* socket, Reception& reception, void* dest, int tailleMax)
+{
+    for (;;) {
+        const int taille = extraireMessage(reception, dest, tailleMax);
+        if (taille >= 0) return taille;               // un message complet était déjà là
+        if (!recevoirOctets(socket, reception)) return -1;  // sinon, attendre la suite
+    }
+}
+
+// Versions "texte", construites par-dessus le protocole
+static bool envoyerTexte(NET_StreamSocket* socket, const char* texte)
+{
+    return envoyerMessage(socket, texte, static_cast<int>(SDL_strlen(texte)));
+}
+
+static bool recevoirTexte(NET_StreamSocket* socket, Reception& reception, char* tampon, int tailleTampon)
+{
+    const int n = recevoirMessage(socket, reception, tampon, tailleTampon - 1);
+    if (n < 0) return false;
+    tampon[n] = '\0';
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,8 +125,9 @@ static bool lancerHote()
 
     // EXPÉRIENCE : le client envoie 3 messages, on appelle 3 fois recevoirTexte
     char tampon[256];
+    Reception reception;  // un tampon de réception par connexion
     for (int i = 1; i <= 3; ++i) {
-        if (recevoirTexte(client, tampon, sizeof(tampon)))
+        if (recevoirTexte(client, reception, tampon, sizeof(tampon)))
             SDL_Log("Lecture n°%d : [%s]", i, tampon);
     }
     envoyerTexte(client, "Bienvenue dans la salle !");
@@ -123,7 +174,8 @@ static bool lancerClient(const char* nomHote)
     envoyerTexte(socket, "Je suis le joueur 2");
     envoyerTexte(socket, "On joue ?");
     char tampon[256];
-    if (recevoirTexte(socket, tampon, sizeof(tampon)))
+    Reception reception;
+    if (recevoirTexte(socket, reception, tampon, sizeof(tampon)))
         SDL_Log("Réponse de l'hôte : %s", tampon);
 
     NET_DestroyStreamSocket(socket);
