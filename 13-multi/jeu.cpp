@@ -83,7 +83,23 @@ void mettreAJour(Jeu& jeu, const std::vector<Entrees>& entrees, float dt)
 
     // 2. Ramassage : chaque pièce touchée disparaît et rapporte 1 point
     //    au joueur qui l'a touchée
-    // TODO(human)
+    size_t i = 0;
+    while (i < jeu.pieces.size()) {
+        bool ramassee = false;
+        for (Joueur &joueur : jeu.joueurs) {
+            if (collision(joueur.hitbox(), jeu.pieces[i].hitbox())){
+                joueur.score += 1;
+                ramassee = true;
+                break;
+            }
+        }
+
+        if (ramassee) {
+            jeu.pieces[i] = jeu.pieces.back();
+            jeu.pieces.pop_back();
+        }
+        else i++;
+    }
 
     // 3. Nouvelle vague quand toutes les pièces sont ramassées
     if (jeu.pieces.empty()) { genererPieces(jeu); }
