@@ -48,7 +48,16 @@ static bool lancerHote()
     NET_UnrefAddress(adr);
 
     // Recevoir le message du client et l'afficher
-    // TODO(human)
+    void *aSurveillerClient[] = { client };
+    NET_WaitUntilInputAvailable(aSurveillerClient, 1, -1);
+
+    char tampon[256];
+    int n = NET_ReadFromStreamSocket(client, tampon, sizeof(tampon) - 1);
+
+    if (n > 0) {
+        tampon[n] = '\0';
+        SDL_Log("Message reçu: %s", tampon);
+    } else if (n < 0) SDL_Log("Connexion perdu: %s", SDL_GetError());
 
     NET_DestroyStreamSocket(client);
     NET_DestroyServer(serveur);
