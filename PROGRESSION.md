@@ -1,6 +1,6 @@
 # Progression : SDL3 et jeux en C++
 
-Dernière séance : 29/09/2026
+Dernière séance : 29/09/2026 (fin de soirée)
 
 Objectif final : des jeux PC en C++ avec SDL3 (API callbacks), jusqu'au multijoueur
 (un joueur héberge une salle, les autres la rejoignent).
@@ -19,7 +19,8 @@ cmake --build build && ./build/<dossier>/<exécutable>
 | 3 | `std::vector`, collisions, pièces/score, séparation logique/SDL (`03-collisions`, `04-separation`) | ✅ Fait |
 | 4 | Textures (`05-textures`), texte SDL_ttf (`06-texte`), son (`07-son`) | ✅ Fait |
 | 5 | États menu/partie/pause (`08-etats`), pas de temps fixe (`09-pas-fixe`) | ✅ Fait |
-| 6 | Réseau avec SDL3_net : mini-chat TCP 🚧 (`10-chat`), puis protocole, UDP, jeu en réseau | ⏭️ **En cours** |
+| 6 | Réseau SDL3_net : chat (`10`), protocole (`11`), messages (`12`), multi local (`13`), état (`14`), **jeu en ligne** (`15`) | ✅ Fait |
+| 7 | Jouer avec un ami par Internet (Tailscale + version Windows) | ⏭️ **Test à faire** |
 
 ## Ce qu'on a vu
 
@@ -130,26 +131,58 @@ cmake --build build && ./build/<dossier>/<exécutable>
   détruire un objet qui vaut `nullptr` ; ne détruire que ce qui a été créé.
 - Conseil : **compiler souvent**, même sans être sûr. Le compilateur est un assistant.
 
+### Leçon 6 (suite) : protocole, sérialisation, jeu en ligne (`11` à `15`)
+- **TCP = flux d'octets** : les messages se collent ou se coupent (expérience dans `10-chat`), et l'attente
+  des deux côtés = **interblocage**. Solution : un **protocole** `[taille sur 2 octets][données]`
+  (`envoyerMessage` / `extraireMessage`, avec une `Reception` par connexion ; `memmove` pour retirer un message).
+  Jamais confiance à une taille reçue (-2 si trop gros). Testé sous **ASan** (bug `octets - 9` trouvé).
+- **Ordre réseau** (big-endian) : `>> 8`, `& 0xFF` ; opérateurs de bits `<<`, `>>`, `|`, `&` (vus de zéro).
+- **Sérialisation** (`messages.cpp`) : 1er octet = `TypeMessage` ; `Entrees` en 4 bits (drapeaux) ;
+  `Ecrivain` / `Lecteur` (u8, u16, u32, f32 via `memcpy`, marque-page `pos`, `ok` anti-débordement) ;
+  état = `[nbJoueurs][x y score actif]...[nbPieces][x y]...` ; le décodeur lit EXACTEMENT dans le même ordre,
+  valide chaque nombre reçu AVANT `resize`, et vérifie `pos == taille`. Tests : `./build/14-etat/etat`.
+- **Multi-joueurs** (`13-multi`) : `Jeu.joueurs` (vector), `mettreAJour(jeu, vector<Entrees>, dt)`,
+  ramassage avec boucle intérieure + `bool ramassee` + `break` (le 1er joueur de la liste gagne les égalités).
+- **Jeu en ligne** (`15-en-ligne`) : hôte qui fait **autorité** (seul à calculer), client « terminal »
+  (envoie ses touches, dessine l'état reçu). Tout **non bloquant** : `NET_GetAddressStatus`,
+  `NET_GetConnectionStatus`, `lireDisponible` puis `while (extraireMessage(...) >= 0)`.
+  Écrans : Menu (H/R) → saisie d'adresse (SDL_StartTextInput) → connexion / salle d'attente → partie.
+  Message `Debut` = ton numéro. Départs : `socket == nullptr` = place libre, joueur `actif = false` ;
+  les places libres sont réutilisées (rejoindre en cours de partie). Backlog TCP expliqué.
+- **Triches** (hôte seulement) : taper `triche` en partie, puis Ctrl+Maj+T/G/M/F/I/P/0, menu Ctrl+Maj+H
+  (semi-transparent, `ALPHA_FOND` / `ALPHA_TEXTE`). Compilation conditionnelle `#ifdef AVEC_TRICHES`,
+  option CMake `-DAVEC_TRICHES=OFF` pour la version des amis (vérifié avec `strings`).
+- **Commentaires** explicatifs ajoutés dans toutes les leçons (code inchangé, vérifié).
+
+### Leçon 7 : jouer par Internet
+- Box = **NAT** (adresse publique partagée) ; en **4G/5G = CGNAT** : redirection de port impossible.
+  → **Tailscale** (réseau privé virtuel, adresses `100.x.y.z`). Installé chez Dylan ; activé seulement
+  pour jouer : `sudo systemctl start tailscaled` + `sudo tailscale up` ... `sudo tailscale down` +
+  `sudo systemctl stop tailscaled`. L'ami (Windows) doit être dans le même tailnet (Invite users ou Share).
+- **Compilation croisée** vers Windows (dossier `windows/`) : `mingw-w64-gcc`, SDL « devel mingw »
+  téléchargées dans `windows/deps/` (gitignoré), fichier de toolchain CMake, script
+  **`./windows/construire.sh`** → `build-windows/ChasseAuxPieces.zip` (exe strippé, sans triches,
+  DLL SDL + `libwinpthread-1.dll`). Piège vu : `pipefail` + `grep -q`.
+
 ## Où on s'est arrêtés
 
-Dans `10-chat/main.cpp`, section « Outils communs » : deux fonctions **à écrire** (le `TODO(human)`) :
-- `envoyerTexte(socket, texte)` : `NET_WriteToStreamSocket(socket, texte, (int)SDL_strlen(texte))` et renvoyer son résultat ;
-- `recevoirTexte(socket, tampon, tailleTampon)` : adapter l'ancien code (en commentaire dans la fonction) :
-  `client` → `socket`, ne pas redéclarer `tampon`, `sizeof(tampon) - 1` → **`tailleTampon - 1`**
-  (car `sizeof` d'un pointeur = 8 !), pas d'affichage du message, `return true` si `n > 0`, sinon `false`.
-Les appels sont déjà en place : le client envoie, l'hôte répond « Bienvenue dans la salle ! », le client affiche la réponse.
-Le programme compile avec des warnings tant que les deux fonctions sont vides (normal).
-Test : terminal 1 `./build/10-chat/chat hote`, terminal 2 `./build/10-chat/chat client 127.0.0.1`.
+Tout est prêt pour jouer avec l'ami ; **rien n'a encore été testé pour de vrai par Internet**.
+À faire quand l'ami est là :
+1. (Optionnel) Tester la version Windows avec **Wine** : `cd build-windows/ChasseAuxPieces && wine ChasseAuxPieces.exe`,
+   en même temps que la version Linux en hôte (`./build/15-en-ligne/en_ligne`, H) → client Wine sur 127.0.0.1.
+2. Envoyer `build-windows/ChasseAuxPieces.zip` à l'ami (extraire le zip ; SmartScreen :
+   « Informations complémentaires » → « Exécuter quand même »).
+3. Tailscale : Dylan démarre le service, invite l'ami ; l'ami installe Tailscale Windows ;
+   test `ping 100.x.y.z` depuis le cmd de l'ami.
+4. Dylan héberge (H), l'ami rejoint (R + adresse Tailscale de Dylan).
 
 Bonus facultatifs toujours en attente :
-- marge autour du joueur et limite d'essais dans `genererPieces` ;
-- flèches du clavier en plus de ZQSD dans `lireEntrees` (avec `||`).
+- marge autour du joueur et limite d'essais dans `genererPieces`.
 
 ## Prochaine étape
 
-1. Écrire `envoyerTexte` / `recevoirTexte`, tester l'aller-retour.
-2. Un vrai chat en boucle (taper des messages au clavier) → découvrir le problème du **flux TCP**
-   (messages collés ou coupés) et inventer un **protocole** (préfixe de taille ou séparateur).
-3. Envoyer des **structures** (les `Entrees` du jeu) au lieu de texte : sérialisation, ordre des octets.
-4. UDP (`NET_DatagramSocket`), perte de paquets simulée, ticks.
-5. Brancher dans le jeu : écrans Héberger / Rejoindre / Salle d'attente, version **non bloquante**.
+Selon le résultat du test avec l'ami :
+- s'il y a des soucis (latence, déconnexions en 4G) : **timeout** de déconnexion, puis éventuellement
+  **UDP** (`NET_DatagramSocket`) et **prédiction côté client** ;
+- pour une version « finale » Windows : masquer la console (`WIN32_EXECUTABLE`), une icône ;
+- ou un nouveau jeu en réutilisant toute l'architecture (`jeu` / `affichage` / `reseau` / `messages` / `session`).
