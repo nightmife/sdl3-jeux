@@ -1,6 +1,6 @@
 # Progression : SDL3 et jeux en C++
 
-Dernière séance : 28/09/2026
+Dernière séance : 29/09/2026
 
 Objectif final : des jeux PC en C++ avec SDL3 (API callbacks), jusqu'au multijoueur
 (un joueur héberge une salle, les autres la rejoignent).
@@ -18,8 +18,8 @@ cmake --build build && ./build/<dossier>/<exécutable>
 | 2 | Dessin, clavier, delta time, bords, diagonale (`02-mouvement`) | ✅ Fait |
 | 3 | `std::vector`, collisions, pièces/score, séparation logique/SDL (`03-collisions`, `04-separation`) | ✅ Fait |
 | 4 | Textures (`05-textures`), texte SDL_ttf (`06-texte`), son (`07-son`) | ✅ Fait |
-| 5 | États menu/partie/pause ✅ (`08-etats`), pas de temps fixe 🚧 (`09-pas-fixe`) | ⏭️ **En cours** |
-| 6 | Réseau : client/serveur, TCP vs UDP, héberger/rejoindre une salle, synchro | ⬜ À faire |
+| 5 | États menu/partie/pause (`08-etats`), pas de temps fixe (`09-pas-fixe`) | ✅ Fait |
+| 6 | Réseau avec SDL3_net : mini-chat TCP 🚧 (`10-chat`), puis protocole, UDP, jeu en réseau | ⏭️ **En cours** |
 
 ## Ce qu'on a vu
 
@@ -103,19 +103,43 @@ cmake --build build && ./build/<dossier>/<exécutable>
 - `SDL_RenderPresent` déplacé à la fin de `SDL_AppIterate`, pour dessiner les écrans par-dessus le jeu
   (voile semi-transparent avec `SDL_BLENDMODE_BLEND`, textes fixes générés une fois).
 
+### Leçon 5 (suite) : pas de temps fixe (`09-pas-fixe/`)
+- `PAS_FIXE = 1/60` dans `jeu.h`. Tirelire : `accumulateur += dt` (plafonné à 0.25 s contre la
+  « spirale de la mort »), puis `while (accumulateur >= PAS_FIXE) { mettreAJour(..., PAS_FIXE); accumulateur -= PAS_FIXE; }`.
+- Test sans écran : avec `dt` variable, 60 Hz et 144 Hz divergent. Avec le pas fixe, les positions
+  sont **identiques au bit près pas par pas** (le 144 Hz peut juste avoir un pas de retard à un instant donné).
+  → En réseau, on synchronise des **numéros de pas (ticks)**, pas des instants.
+- Pas besoin de vider l'accumulateur à la reprise : il ne grossit que dans la branche `Partie`.
+
+### Leçon 6 : réseau (`10-chat/`)
+- **SDL3_net 3.2.0** (stable, mai 2026) n'est pas packagée sur Arch : elle est téléchargée et compilée par
+  CMake (`FetchContent`, dans le `CMakeLists.txt` racine, en statique). Choisie plutôt qu'ENet pour la cohérence
+  avec SDL3, TCP + UDP, et la simulation de perte de paquets intégrée.
+- Notions : **IP** = l'immeuble (`127.0.0.1` = soi-même), **port** = l'appartement (on utilise 7777),
+  **serveur** = attend les appels, **client** = appelle. **TCP** = appel téléphonique : connexion,
+  fiable, ordonné, mais c'est un **flux d'octets** (pas de séparation entre les messages).
+- Objets : `NET_Server` (le standard, ne sert qu'à décrocher), `NET_StreamSocket` (une ligne : envoyer et
+  recevoir), `NET_Address`. Le client obtient son socket avec `NET_CreateClient`, l'hôte avec
+  `NET_AcceptClient(serveur, &client)`.
+- Tout est **non bloquant**. Pour attendre : `NET_WaitUntil...(..., -1)` (ok en terminal, interdit dans le jeu).
+- Hôte : `NET_CreateServer(nullptr, PORT, 0)`, `NET_WaitUntilInputAvailable(tableau de void*, n, -1)`,
+  `NET_AcceptClient` (gérer `false` **et** `client == nullptr`), `NET_GetStreamSocketAddress` (→ `NET_UnrefAddress` !).
+- Lecture : `n = NET_ReadFromStreamSocket(sock, tampon, taille - 1)` ; `n > 0` → `tampon[n] = '\0'` ;
+  `0` = rien pour l'instant ; `-1` = connexion cassée. Garder une case pour le `'\0'` (anti-débordement).
+- Pièges vus : `%s` pour un entier (plantage), `%d` pour du texte ; noms d'API « traduits » en français ;
+  détruire un objet qui vaut `nullptr` ; ne détruire que ce qui a été créé.
+- Conseil : **compiler souvent**, même sans être sûr. Le compilateur est un assistant.
+
 ## Où on s'est arrêtés
 
-En plein **pas de temps fixe** (`09-pas-fixe/`, qui compile avec 2 warnings « inutilisé », c'est normal).
-`PAS_FIXE = 1/60` est dans `jeu.h`, `float accumulateur` dans `AppState`. Il reste le `TODO(human)` dans
-`SDL_AppIterate`, dans le `if (state->ecran == Ecran::Partie)`, à la place de l'ancien `mettreAJour(..., dt)` :
-1. plafonner `dt` à `0.25f` (anti « spirale de la mort ») ;
-2. `state->accumulateur += dt;`
-3. `while (state->accumulateur >= PAS_FIXE) { mettreAJour(state->jeu, entrees, PAS_FIXE); state->accumulateur -= PAS_FIXE; }`
-Question posée : faut-il remettre l'accumulateur à 0 à la reprise après une pause ?
-(Indice : le code est dans la branche `Partie`, donc l'accumulateur ne grossit pas pendant la pause.)
-
-Pourquoi : avec un `dt` variable, les calculs diffèrent légèrement d'un écran à l'autre (arrondis `float`),
-ce qui est fatal en réseau. Avec un pas fixe, tout le monde fait exactement les mêmes calculs.
+Dans `10-chat/main.cpp`, section « Outils communs » : deux fonctions **à écrire** (le `TODO(human)`) :
+- `envoyerTexte(socket, texte)` : `NET_WriteToStreamSocket(socket, texte, (int)SDL_strlen(texte))` et renvoyer son résultat ;
+- `recevoirTexte(socket, tampon, tailleTampon)` : adapter l'ancien code (en commentaire dans la fonction) :
+  `client` → `socket`, ne pas redéclarer `tampon`, `sizeof(tampon) - 1` → **`tailleTampon - 1`**
+  (car `sizeof` d'un pointeur = 8 !), pas d'affichage du message, `return true` si `n > 0`, sinon `false`.
+Les appels sont déjà en place : le client envoie, l'hôte répond « Bienvenue dans la salle ! », le client affiche la réponse.
+Le programme compile avec des warnings tant que les deux fonctions sont vides (normal).
+Test : terminal 1 `./build/10-chat/chat hote`, terminal 2 `./build/10-chat/chat client 127.0.0.1`.
 
 Bonus facultatifs toujours en attente :
 - marge autour du joueur et limite d'essais dans `genererPieces` ;
@@ -123,8 +147,9 @@ Bonus facultatifs toujours en attente :
 
 ## Prochaine étape
 
-1. Finir le pas fixe, tester, commiter. Fin de la leçon 5.
-2. **Leçon 6 : le réseau.** Notions : client/serveur, hôte qui fait autorité, TCP vs UDP, sockets.
-   Le client envoie ses `Entrees` (4 bool), l'hôte fait tourner `mettreAJour` et renvoie l'état.
-   Menu : ajouter « Héberger » / « Rejoindre » + un écran « Salle d'attente ».
-   Choix de bibliothèque à discuter (sockets POSIX directement, SDL3_net, ENet…).
+1. Écrire `envoyerTexte` / `recevoirTexte`, tester l'aller-retour.
+2. Un vrai chat en boucle (taper des messages au clavier) → découvrir le problème du **flux TCP**
+   (messages collés ou coupés) et inventer un **protocole** (préfixe de taille ou séparateur).
+3. Envoyer des **structures** (les `Entrees` du jeu) au lieu de texte : sérialisation, ordre des octets.
+4. UDP (`NET_DatagramSocket`), perte de paquets simulée, ticks.
+5. Brancher dans le jeu : écrans Héberger / Rejoindre / Salle d'attente, version **non bloquante**.

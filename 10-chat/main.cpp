@@ -17,6 +17,34 @@
 constexpr Uint16 PORT = 7777;
 
 // ---------------------------------------------------------------------------
+// Outils communs aux deux côtés
+// ---------------------------------------------------------------------------
+
+// Envoie le texte (sans le '\0' final). Renvoie false si la connexion est cassée.
+static bool envoyerTexte(NET_StreamSocket* socket, const char* texte)
+{
+    // TODO(human)
+}
+
+// Attend un message, le copie dans tampon (qui peut contenir tailleTampon octets)
+// et le termine par '\0'. Renvoie true si un message a été reçu.
+// Ton code de réception de l'étape d'avant, à adapter (il est en commentaire) :
+static bool recevoirTexte(NET_StreamSocket* socket, char* tampon, int tailleTampon)
+{
+    // // Recevoir le message du client et l'afficher
+    // void *aSurveillerClient[] = { client };
+    // NET_WaitUntilInputAvailable(aSurveillerClient, 1, -1);
+    //
+    // char tampon[256];
+    // int n = NET_ReadFromStreamSocket(client, tampon, sizeof(tampon) - 1);
+    //
+    // if (n > 0) {
+    //     tampon[n] = '\0';
+    //     SDL_Log("Message reçu: %s", tampon);
+    // } else if (n < 0) SDL_Log("Connexion perdu: %s", SDL_GetError());
+}
+
+// ---------------------------------------------------------------------------
 // Côté HÔTE : ouvrir la salle, attendre un client, l'accepter
 // ---------------------------------------------------------------------------
 static bool lancerHote()
@@ -47,17 +75,12 @@ static bool lancerHote()
 
     NET_UnrefAddress(adr);
 
-    // Recevoir le message du client et l'afficher
-    void *aSurveillerClient[] = { client };
-    NET_WaitUntilInputAvailable(aSurveillerClient, 1, -1);
-
+    // Recevoir le message du client, puis lui répondre
     char tampon[256];
-    int n = NET_ReadFromStreamSocket(client, tampon, sizeof(tampon) - 1);
-
-    if (n > 0) {
-        tampon[n] = '\0';
-        SDL_Log("Message reçu: %s", tampon);
-    } else if (n < 0) SDL_Log("Connexion perdu: %s", SDL_GetError());
+    if (recevoirTexte(client, tampon, sizeof(tampon)))
+        SDL_Log("Message reçu : %s", tampon);
+    envoyerTexte(client, "Bienvenue dans la salle !");
+    NET_WaitUntilStreamSocketDrained(client, -1);  // laisser partir la réponse avant de raccrocher
 
     NET_DestroyStreamSocket(client);
     NET_DestroyServer(serveur);
@@ -95,12 +118,11 @@ static bool lancerClient(const char* nomHote)
     }
     SDL_Log("Connecté à l'hôte !");
 
-    // 3. Envoyer un message : ce ne sont que des octets (ici, les lettres du texte)
-    const char* message = "Salut l'hôte, c'est le client !";
-    NET_WriteToStreamSocket(socket, message, static_cast<int>(SDL_strlen(message)));
-
-    // 4. S'assurer que tout est vraiment parti avant de raccrocher
-    NET_WaitUntilStreamSocketDrained(socket, -1);
+    // 3. Envoyer un message, puis attendre la réponse de l'hôte
+    envoyerTexte(socket, "Salut l'hôte, c'est le client !");
+    char tampon[256];
+    if (recevoirTexte(socket, tampon, sizeof(tampon)))
+        SDL_Log("Réponse de l'hôte : %s", tampon);
 
     NET_DestroyStreamSocket(socket);
     NET_UnrefAddress(adresse);
