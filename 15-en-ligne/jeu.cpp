@@ -190,6 +190,7 @@ int scoreTotal(const Jeu& jeu)
     return total;
 }
 
+#ifdef AVEC_TRICHES
 void pluieDePieces(Jeu& jeu)
 {
     if (jeu.joueurs.empty() || !jeu.joueurs[0].actif) return;
@@ -201,3 +202,4 @@ void pluieDePieces(Jeu& jeu)
         p.y = hote.y + (hote.taille - p.taille) / 2.0f;
     }
 }
+#endif  // AVEC_TRICHES

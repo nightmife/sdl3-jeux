@@ -63,10 +63,14 @@ struct AppState {
     Client        client;
     int           monIndice = 0;  // mon joueur dans jeu.joueurs (0 pour l'hôte)
 
-    // Triches (hôte seulement)
+#ifdef AVEC_TRICHES
+    // Triches (hôte seulement). Tout ce qui est entre #ifdef et #endif n'existe
+    // que si CMake a défini AVEC_TRICHES (option -DAVEC_TRICHES=ON, par défaut).
     Triches       triches;
     bool          trichesDeverrouillees = false;  // il faut d'abord taper le mot secret
+    bool          menuTriches = false;            // le panneau d'aide est-il affiché ?
     std::string   dernieresLettres;               // les dernières lettres tapées
+#endif
     std::string   adresseSaisie = "127.0.0.1";
 };
 
@@ -214,6 +218,7 @@ static void envoyerEtat(AppState* state)
         if (j.socket) envoyerMessage(j.socket, message, taille);  // pas aux joueurs partis
 }
 
+#ifdef AVEC_TRICHES
 // Mot à taper (en pleine partie, en tant qu'hôte) pour (dé)verrouiller les triches.
 // Aucune de ses lettres n'est une touche de déplacement (ZQSD / WASD).
 static constexpr const char* MOT_SECRET = "triche";
@@ -230,6 +235,7 @@ static void gererTriches(AppState* state, const SDL_KeyboardEvent& touche)
             state->dernieresLettres.erase(0, state->dernieresLettres.size() - n);
         if (state->dernieresLettres == MOT_SECRET) {
             state->trichesDeverrouillees = !state->trichesDeverrouillees;
+            state->menuTriches = state->trichesDeverrouillees;  // menu ouvert au déverrouillage
             if (!state->trichesDeverrouillees) state->triches = Triches{};  // tout couper
             SDL_Log("Triches %s", state->trichesDeverrouillees ? "DÉVERROUILLÉES 😈" : "verrouillées");
             state->dernieresLettres.clear();
@@ -250,11 +256,62 @@ static void gererTriches(AppState* state, const SDL_KeyboardEvent& touche)
     case SDLK_I: t.inversion    = !t.inversion;    break;  // Inversion
     case SDLK_P: pluieDePieces(state->jeu);        break;  // Pluie de pièces (instantané)
     case SDLK_0: t = Triches{};                    break;  // tout désactiver
+    case SDLK_H: state->menuTriches = !state->menuTriches; return;  // afficher/cacher le menu
     default: return;
     }
     SDL_Log("Triches : turbo=%d mains=%d aimant=%d gel=%d inversion=%d",
             t.turbo, t.grandesMains, t.aimant, t.gel, t.inversion);
 }
+
+// Le menu du mode triche : toutes les triches, leur combinaison et leur état.
+// Dessiné avec la police de debug de SDL (ASCII seulement : pas d'accents),
+// agrandie 2 fois avec SDL_SetRenderScale. Visible UNIQUEMENT sur l'écran de
+// l'hôte : rien de tout ça ne passe par le réseau.
+static void dessinerMenuTriches(SDL_Renderer* renderer, const Triches& t)
+{
+    struct Ligne { const char* touches; const char* nom; int etat; };  // etat : 1 ON, 0 off, -1 action
+    const Ligne lignes[] = {
+        {"Ctrl+Maj+T", "Turbo (vitesse x2)",           t.turbo},
+        {"Ctrl+Maj+G", "Grandes mains (portee +60px)", t.grandesMains},
+        {"Ctrl+Maj+M", "Aimant a pieces",              t.aimant},
+        {"Ctrl+Maj+F", "Gel des autres joueurs",       t.gel},
+        {"Ctrl+Maj+I", "Inversion des autres",         t.inversion},
+        {"Ctrl+Maj+P", "Pluie de pieces",              -1},
+        {"Ctrl+Maj+0", "Tout desactiver",              -1},
+        {"Ctrl+Maj+H", "Cacher ce menu",               -1},
+    };
+    const int nb = static_cast<int>(sizeof(lignes) / sizeof(lignes[0]));
+
+    // Panneau semi-transparent (coordonnées en "petits pixels" : l'échelle x2 est
+    // appliquée juste après, donc 10 ici = 20 à l'écran)
+    SDL_SetRenderScale(renderer, 2.0f, 2.0f);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 190);
+    const SDL_FRect fond{8, 32, 380, 26.0f + 12.0f * nb + 14.0f};  // sous le score
+    SDL_RenderFillRect(renderer, &fond);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+
+    SDL_SetRenderDrawColor(renderer, 255, 90, 90, 255);
+    SDL_RenderDebugText(renderer, 16, 40, "=== MODE TRICHE ===");
+
+    for (int i = 0; i < nb; ++i) {
+        const float y = 56.0f + 12.0f * static_cast<float>(i);
+        SDL_SetRenderDrawColor(renderer, 200, 200, 220, 255);
+        SDL_RenderDebugText(renderer, 16, y, lignes[i].touches);
+        SDL_RenderDebugText(renderer, 106, y, lignes[i].nom);
+        if (lignes[i].etat >= 0) {
+            if (lignes[i].etat) SDL_SetRenderDrawColor(renderer, 90, 255, 90, 255);   // vert
+            else                SDL_SetRenderDrawColor(renderer, 120, 120, 120, 255); // gris
+            SDL_RenderDebugText(renderer, 342, y, lignes[i].etat ? "[ON]" : "[--]");
+        }
+    }
+    SDL_SetRenderDrawColor(renderer, 160, 160, 160, 255);
+    SDL_RenderDebugText(renderer, 16, 56.0f + 12.0f * nb + 2.0f, "Taper \"triche\" : verrouiller");
+
+    SDL_SetRenderScale(renderer, 1.0f, 1.0f);  // remettre l'échelle normale !
+}
+
+#endif  // AVEC_TRICHES
 
 // Revenir au menu en coupant proprement le réseau
 static void retourMenu(AppState* state)
@@ -384,7 +441,9 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 
     case Ecran::Partie:
         if (touche == SDL_SCANCODE_ESCAPE) retourMenu(state);
+#ifdef AVEC_TRICHES
         if (state->estHote) gererTriches(state, event->key);  // seul l'hôte peut tricher
+#endif
         break;
     }
     return SDL_APP_CONTINUE;
@@ -463,7 +522,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         state->accumulateur += dt;
         bool aAvance = false;
         while (state->accumulateur >= PAS_FIXE) {
+#ifdef AVEC_TRICHES
             mettreAJour(state->jeu, entrees, PAS_FIXE, state->triches);
+#else
+            mettreAJour(state->jeu, entrees, PAS_FIXE);  // version sans triches
+#endif
             state->accumulateur -= PAS_FIXE;
             aAvance = true;
         }
@@ -499,9 +562,13 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         }
     }
 
-    // Petit rappel des triches actives, en bas à gauche, UNIQUEMENT sur l'écran
-    // de l'hôte : c'est dessiné localement, jamais envoyé sur le réseau.
-    if (state->estHote && state->ecran == Ecran::Partie && state->trichesDeverrouillees) {
+#ifdef AVEC_TRICHES
+    // Mode triche (hôte seulement, dessiné localement, jamais envoyé sur le réseau) :
+    // le menu complet, ou seulement un petit rappel en bas à gauche s'il est caché
+    if (state->estHote && state->ecran == Ecran::Partie && state->trichesDeverrouillees
+        && state->menuTriches) {
+        dessinerMenuTriches(state->renderer, state->triches);
+    } else if (state->estHote && state->ecran == Ecran::Partie && state->trichesDeverrouillees) {
         const Triches& t = state->triches;
         std::string actives = "*";
         if (t.turbo)        actives += " turbo";
@@ -512,6 +579,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         SDL_SetRenderDrawColor(state->renderer, 120, 120, 150, 255);  // discret
         SDL_RenderDebugText(state->renderer, 10, HAUTEUR_MONDE - 18, actives.c_str());
     }
+#endif
 
     SDL_RenderPresent(state->renderer);
     return SDL_APP_CONTINUE;

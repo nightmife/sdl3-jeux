@@ -79,9 +79,11 @@ void initialiser(Jeu& jeu, unsigned graine, int nbJoueurs);
 void mettreAJour(Jeu& jeu, const std::vector<Entrees>& entrees, float dt,
                  const Triches& triches = Triches{});
 
+#ifdef AVEC_TRICHES
 // Triche instantanée "pluie de pièces" : toutes les pièces viennent sur le
 // joueur 0, qui les ramassera toutes au pas suivant
 void pluieDePieces(Jeu& jeu);
+#endif
 
 // Somme des scores de tous les joueurs (pratique pour détecter un ramassage)
 int scoreTotal(const Jeu& jeu);
