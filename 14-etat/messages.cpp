@@ -118,7 +118,18 @@ int encoderEtat(const Jeu& jeu, std::uint8_t* tampon, int capacite)
     Ecrivain e{tampon, capacite};
     e.u8(static_cast<std::uint8_t>(TypeMessage::Etat));
 
-    // TODO(human)
+    e.u8(static_cast<std::uint8_t>(jeu.joueurs.size()));
+    for (const Joueur &j : jeu.joueurs) {
+        e.f32(j.x);
+        e.f32(j.y);
+        e.u16(static_cast<std::uint16_t>(j.score));
+    }
+
+    e.u8(static_cast<std::uint8_t>(jeu.pieces.size()));
+    for (const Piece &p : jeu.pieces) {
+        e.f32(p.x);
+        e.f32(p.y);
+    }
 
     return e.ok ? e.pos : -1;
 }
@@ -128,5 +139,26 @@ bool decoderEtat(const std::uint8_t* tampon, int taille, Jeu& jeu)
     Lecteur l{tampon, taille};
     if (l.u8() != static_cast<std::uint8_t>(TypeMessage::Etat)) return false;
 
-    return false;
+    const int nbJoueurs = l.u8();
+
+    if (nbJoueurs > MAX_JOUEURS) return false;
+    jeu.joueurs.resize(nbJoueurs);
+
+    for (Joueur &j : jeu.joueurs) {
+        j.x = l.f32();
+        j.y = l.f32();
+        j.score = l.u16();
+    }
+
+    const int nbPieces = l.u8();
+
+    if (nbPieces > MAX_PIECES_MESSAGE) return false;
+    jeu.pieces.resize(nbPieces);
+
+    for (Piece &p : jeu.pieces) {
+        p.x = l.f32();
+        p.y = l.f32();
+    }
+    
+    return l.ok && l.pos == l.taille;
 }
