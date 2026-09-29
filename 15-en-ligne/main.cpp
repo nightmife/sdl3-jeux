@@ -134,15 +134,35 @@ static void traiterMessagesClient(AppState* state)
     }
 }
 
-// HÔTE : prévient chaque joueur distant que la partie commence, avec son numéro
-static void envoyerDebut(AppState* state)
+// HÔTE : prévient le joueur distant k que la partie commence (ou qu'il y entre),
+// avec son numéro dans jeu.joueurs (k + 1, puisque l'hôte est le joueur 0)
+static void envoyerDebutA(AppState* state, size_t k)
 {
+    const JoueurDistant& j = state->hote.joueurs[k];
+    if (!j.socket) return;  // place libre : personne à prévenir
+    std::uint8_t message[8];
     const int nbJoueurs = static_cast<int>(state->jeu.joueurs.size());
-    for (size_t k = 0; k < state->hote.joueurs.size(); ++k) {
-        std::uint8_t message[8];
-        const int taille = encoderDebut(static_cast<int>(k) + 1, nbJoueurs, message, sizeof(message));
-        envoyerMessage(state->hote.joueurs[k].socket, message, taille);
-    }
+    const int taille = encoderDebut(static_cast<int>(k) + 1, nbJoueurs, message, sizeof(message));
+    envoyerMessage(j.socket, message, taille);
+}
+
+// HÔTE : un joueur arrive EN COURS DE PARTIE sur la place k
+static void accueillirEnCoursDePartie(AppState* state, size_t k)
+{
+    // Nouvelle place : agrandir le jeu (l'hôte est jeu.joueurs[0], la place k est k + 1)
+    while (state->jeu.joueurs.size() < k + 2)
+        state->jeu.joueurs.push_back(Joueur{});
+
+    // Place (re)donnée à un nouveau venu : on repart de zéro, au centre du monde
+    Joueur& nouveau = state->jeu.joueurs[k + 1];
+    nouveau = Joueur{};
+    nouveau.x = (LARGEUR_MONDE - nouveau.taille) / 2.0f;
+    nouveau.y = (HAUTEUR_MONDE - nouveau.taille) / 2.0f;
+
+    // Ses entrées repartent de zéro, et il reçoit son numéro
+    state->hote.joueurs[k].entrees = Entrees{};
+    envoyerDebutA(state, k);
+    SDL_Log("Le joueur %d rejoint la partie en cours", static_cast<int>(k) + 2);
 }
 
 // HÔTE : lit ce que chaque joueur distant a envoyé (ses touches)
@@ -300,12 +320,16 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
     case Ecran::SalleAttenteHote:
         if (touche == SDL_SCANCODE_ESCAPE) retourMenu(state);
         if (touche == SDL_SCANCODE_RETURN) {
-            // L'hôte + chaque joueur connecté
+            // L'hôte + une place par joueur distant (y compris les places libérées
+            // par des joueurs partis avant le lancement : elles seront inactives)
             const int nb = 1 + static_cast<int>(state->hote.joueurs.size());
             initialiser(state->jeu, static_cast<unsigned>(SDL_GetPerformanceCounter()), nb);
+            for (size_t k = 0; k < state->hote.joueurs.size(); ++k) {
+                if (!state->hote.joueurs[k].socket) state->jeu.joueurs[k + 1].actif = false;
+                envoyerDebutA(state, k);
+            }
             state->accumulateur = 0;
             state->monIndice = 0;
-            envoyerDebut(state);
             state->ecran = Ecran::Partie;
         }
         break;
@@ -337,7 +361,7 @@ static void textesEcran(const AppState* state, std::string& l1, std::string& l2)
         break;
     case Ecran::SalleAttenteHote:
         l1 = "Salle ouverte (port " + std::to_string(PORT) + ") - joueurs : "
-           + std::to_string(1 + state->hote.joueurs.size()) + " / " + std::to_string(MAX_JOUEURS);
+           + std::to_string(1 + nbConnectes(state->hote)) + " / " + std::to_string(MAX_JOUEURS);
         l2 = "Entrée : lancer la partie   Échap : fermer la salle";
         break;
     default:
@@ -361,8 +385,13 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     if (dt > 0.25f) dt = 0.25f;
 
     // --- Réseau : à chaque frame, sans jamais attendre ---
-    if (state->ecran == Ecran::SalleAttenteHote)
-        accepterNouveauxJoueurs(state->hote);
+    // HÔTE : accueillir les arrivants et repérer les départs, en attente ET en partie
+    if (state->estHote && (state->ecran == Ecran::SalleAttenteHote || state->ecran == Ecran::Partie)) {
+        const std::vector<size_t> nouveaux = accepterNouveauxJoueurs(state->hote);
+        if (state->ecran == Ecran::Partie)
+            for (size_t k : nouveaux) accueillirEnCoursDePartie(state, k);
+        traiterMessagesHote(state);  // lit les touches, et détecte les joueurs partis
+    }
     if (state->ecran == Ecran::ConnexionClient)
         avancerClient(state->client);
     // Client connecté : écouter l'hôte (en attente du début, puis pendant la partie)
@@ -375,8 +404,6 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
     // --- HÔTE : c'est lui qui fait tourner le jeu pour tout le monde ---
     if (state->ecran == Ecran::Partie && state->estHote) {
-        traiterMessagesHote(state);
-
         // Les entrées de chacun : l'hôte depuis son clavier, les autres depuis le réseau
         std::vector<Entrees> entrees(state->jeu.joueurs.size());
         entrees[0] = lireEntrees();

@@ -17,8 +17,9 @@ bool demarrerHote(Hote& hote)
     return true;
 }
 
-void accepterNouveauxJoueurs(Hote& hote)
+std::vector<size_t> accepterNouveauxJoueurs(Hote& hote)
 {
+    std::vector<size_t> nouveaux;  // indices des joueurs arrivés pendant cet appel
 
     // Plusieurs joueurs peuvent arriver pendant la même frame : on décroche en
     // boucle jusqu'à ce qu'il n'y ait plus personne. Aucune attente ici
@@ -28,25 +29,54 @@ void accepterNouveauxJoueurs(Hote& hote)
 
         if (!NET_AcceptClient(hote.serveur, &client)) {
             SDL_Log("Erreur en acceptant un joueur: %s", SDL_GetError());
-            return;
+            return nouveaux;
         }
         
-        if (client == nullptr) return;  // plus personne à la porte pour cette frame
+        if (client == nullptr) return nouveaux;  // plus personne à la porte pour cette frame
 
-        // Salle pleine : l'hôte est le joueur 1, il reste MAX_JOUEURS - 1 places
-        // (attention à l'erreur de un !). On raccroche au nez du joueur en trop,
-        // puis "continue" pour traiter ceux qui attendent peut-être derrière.
-        if (hote.joueurs.size() >= MAX_JOUEURS - 1) {
+        // Trouver une place pour le nouveau venu, dans cet ordre :
+        //   1. une place LIBRE (socket == nullptr, laissée par un joueur parti) :
+        //      on la réutilise, ce qui garde les numéros des autres inchangés ;
+        //   2. sinon une nouvelle place, si la salle n'est pas pleine
+        //      (l'hôte est le joueur 1 : il reste MAX_JOUEURS - 1 places) ;
+        //   3. sinon refus : on raccroche, et "continue" pour traiter ceux
+        //      qui attendent peut-être derrière.
+        bool trouvee = false;
+        size_t place;
+        // place < size() (et surtout pas size() - 1 : sur un vector vide,
+        // 0 - 1 en size_t donne un nombre gigantesque)
+        for (place = 0; place < hote.joueurs.size(); place ++) {
+            if (hote.joueurs[place].socket == nullptr) {
+                trouvee = true;
+                break;
+            }
+        }
+        
+        if (trouvee) {
+            hote.joueurs[place] = JoueurDistant{};  // vider la reception et les
+            hote.joueurs[place].socket = client;    // entrées de l'ancien occupant
+        } else if (hote.joueurs.size() < MAX_JOUEURS - 1) {
+            JoueurDistant j;
+            j.socket = client;
+            hote.joueurs.push_back(j);
+            place = hote.joueurs.size() - 1;
+        } else {
             SDL_Log("Salle pleine: joueur refusé");
             NET_DestroyStreamSocket(client);
             continue;
         }
 
-        JoueurDistant j;
-        j.socket = client;
-        hote.joueurs.push_back(j);
-        SDL_Log("Joueur %d connecté !", static_cast<int>(hote.joueurs.size()) + 1);
+        nouveaux.push_back(place);
+        SDL_Log("Joueur %d connecté !", static_cast<int>(place) + 2);
     }
+}
+
+int nbConnectes(const Hote& hote)
+{
+    int n = 0;
+    for (const JoueurDistant& j : hote.joueurs)
+        if (j.socket) ++n;
+    return n;
 }
 
 void fermerHote(Hote& hote)

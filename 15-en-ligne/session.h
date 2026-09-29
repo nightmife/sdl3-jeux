@@ -29,8 +29,14 @@ struct Hote {
 bool demarrerHote(Hote& hote);
 
 // Accepte TOUS les joueurs qui attendent à la porte, sans jamais attendre.
-// À appeler à chaque frame tant que la salle est ouverte.
-void accepterNouveauxJoueurs(Hote& hote);
+// Un nouveau venu reprend une place LIBRE (socket == nullptr) s'il y en a une,
+// sinon on ajoute une place (dans la limite de MAX_JOUEURS - 1 joueurs distants).
+// Renvoie les indices (dans hote.joueurs) des joueurs qui viennent d'arriver.
+// À appeler à chaque frame tant que la salle est ouverte (attente ET partie).
+std::vector<size_t> accepterNouveauxJoueurs(Hote& hote);
+
+// Nombre de joueurs distants encore connectés (les places libres ne comptent pas)
+int nbConnectes(const Hote& hote);
 
 // Raccroche avec tout le monde et ferme la salle
 void fermerHote(Hote& hote);
