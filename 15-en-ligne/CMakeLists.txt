@@ -11,6 +11,12 @@ if(AVEC_TRICHES)
     target_compile_definitions(en_ligne PRIVATE AVEC_TRICHES)
 endif()
 
+# Windows : intégrer les bibliothèques de base du C++ DANS le .exe, pour ne pas
+# avoir à fournir libstdc++-6.dll et libgcc_s_seh-1.dll à côté
+if(WIN32)
+    target_link_options(en_ligne PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
 # Copie le dossier assets/ à côté de l'exécutable après chaque compilation
 add_custom_command(TARGET en_ligne POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
