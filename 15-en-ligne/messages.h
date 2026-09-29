@@ -57,7 +57,7 @@ bool decoderEntrees(const std::uint8_t* tampon, int taille, Entrees& e);
 int  encoderDebut(int indiceJoueur, int nbJoueurs, std::uint8_t* tampon, int capacite);
 bool decoderDebut(const std::uint8_t* tampon, int taille, int& indiceJoueur, int& nbJoueurs);
 
-// Message d'état : [type][nbJoueurs][x y score]...[nbPieces][x y]...
+// Message d'état : [type][nbJoueurs][x y score actif]...[nbPieces][x y]...
 // Renvoie le nombre d'octets écrits, ou -1 si le tampon est trop petit.
 int  encoderEtat(const Jeu& jeu, std::uint8_t* tampon, int capacite);
 // Remplit joueurs et pieces de "jeu" (le reste de "jeu" n'est pas touché).

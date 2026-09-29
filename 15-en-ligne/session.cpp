@@ -52,7 +52,7 @@ void accepterNouveauxJoueurs(Hote& hote)
 void fermerHote(Hote& hote)
 {
     for (JoueurDistant& j : hote.joueurs)
-        NET_DestroyStreamSocket(j.socket);
+        if (j.socket) NET_DestroyStreamSocket(j.socket);  // nullptr = déjà parti
     hote.joueurs.clear();
     if (hote.serveur) NET_DestroyServer(hote.serveur);
     hote.serveur = nullptr;

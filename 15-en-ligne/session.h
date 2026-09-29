@@ -15,7 +15,7 @@
 
 // Un joueur connecté à notre salle, vu par l'hôte
 struct JoueurDistant {
-    NET_StreamSocket* socket = nullptr;
+    NET_StreamSocket* socket = nullptr;   // nullptr = ce joueur est parti
     Reception         reception;  // un tampon de réception par connexion
     Entrees           entrees;    // dernières touches reçues de ce joueur
 };

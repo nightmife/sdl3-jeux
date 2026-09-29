@@ -74,6 +74,7 @@ std::string texteScores(const Jeu& jeu)
     for (size_t i = 0; i < jeu.joueurs.size(); ++i) {
         if (i > 0) texte += "   ";
         texte += "J" + std::to_string(i + 1) + " : " + std::to_string(jeu.joueurs[i].score);
+        if (!jeu.joueurs[i].actif) texte += " (parti)";
     }
     return texte;
 }
@@ -135,6 +136,7 @@ void dessiner(SDL_Renderer* renderer, const Textures& textures,
     // Chaque joueur avec sa teinte (SDL_SetTextureColorMod multiplie les couleurs du sprite)
     for (size_t i = 0; i < jeu.joueurs.size(); ++i) {
         const Joueur& j = jeu.joueurs[i];
+        if (!j.actif) continue;  // joueur parti : plus dessiné
         const SDL_Color c = COULEURS_JOUEURS[i];
         SDL_FRect rect{j.x, j.y, j.taille, j.taille};
         if (textures.joueur == nullptr) {

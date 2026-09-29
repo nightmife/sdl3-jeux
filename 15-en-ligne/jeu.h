@@ -26,6 +26,9 @@ struct Joueur {
     float y = 0.0f;
     float taille = 50.0f;
     int   score  = 0;  // chaque joueur a maintenant son propre score
+    bool  actif  = true;  // false = le joueur a quitté : sa place reste réservée
+                          // (les numéros des autres ne changent pas), mais il
+                          // ne bouge plus, ne ramasse plus et n'est plus dessiné
 
     Rect hitbox() const { return Rect{x, y, taille, taille}; }
 };

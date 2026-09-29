@@ -19,7 +19,7 @@ static bool collision(const Rect& a, const Rect& b)
 static bool toucheUnJoueur(const Jeu& jeu, const Rect& r)
 {
     for (const Joueur& j : jeu.joueurs)
-        if (collision(j.hitbox(), r)) return true;
+        if (j.actif && collision(j.hitbox(), r)) return true;
     return false;
 }
 
@@ -97,8 +97,10 @@ void initialiser(Jeu& jeu, unsigned graine, int nbJoueurs)
 void mettreAJour(Jeu& jeu, const std::vector<Entrees>& entrees, float dt)
 {
     // 1. Chaque joueur se déplace selon SES entrées
+    //    (les joueurs partis ne bougent plus)
     for (size_t i = 0; i < jeu.joueurs.size() && i < entrees.size(); ++i)
-        deplacerJoueur(jeu.joueurs[i], entrees[i], dt);
+        if (jeu.joueurs[i].actif)
+            deplacerJoueur(jeu.joueurs[i], entrees[i], dt);
 
     // 2. Ramassage : chaque pièce touchée disparaît et rapporte 1 point
     //    au joueur qui l'a touchée. Swap-and-pop comme en solo, avec une
@@ -107,6 +109,7 @@ void mettreAJour(Jeu& jeu, const std::vector<Entrees>& entrees, float dt)
     while (i < jeu.pieces.size()) {
         bool ramassee = false;  // "messager" entre la boucle intérieure et l'extérieure
         for (Joueur &joueur : jeu.joueurs) {  // & : on modifie le score du VRAI joueur
+            if (!joueur.actif) continue;       // un joueur parti ne ramasse plus rien
             if (collision(joueur.hitbox(), jeu.pieces[i].hitbox())) {
                 joueur.score += 1;
                 ramassee = true;

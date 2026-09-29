@@ -5,6 +5,7 @@
 // Étape C1 : menu, saisie de l'adresse, salle d'attente, connexion non bloquante.
 // Étape C2 : l'hôte prévient chaque client que la partie commence (message Debut).
 // Étape C3 : le client envoie ses touches, l'hôte calcule tout et renvoie l'état.
+// Étape C4 : gérer les départs (joueur qui quitte, hôte qui ferme).
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
@@ -149,10 +150,18 @@ static void traiterMessagesHote(AppState* state)
 {
     // Miroir de traiterMessagesClient, pour CHAQUE joueur connecté.
     // & : on modifie la reception et les entrées du VRAI joueur, pas d'une copie.
-    for (JoueurDistant &j : state->hote.joueurs) {
+    for (size_t k = 0; k < state->hote.joueurs.size(); k++) {
+        JoueurDistant &j = state->hote.joueurs[k];
+        if (j.socket == nullptr) continue;
         // 1. Récupérer ce qui est arrivé (sans attendre)
         if (!lireDisponible(j.socket, j.reception)) {
-            SDL_Log("Un joueur s'est déconnecté");
+            NET_DestroyStreamSocket(j.socket);
+            j.socket = nullptr;
+            j.entrees = Entrees{};
+            
+            if (k + 1 < state->jeu.joueurs.size()) state->jeu.joueurs[k + 1].actif = false;
+            
+            SDL_Log("le joueur %d s'est déconnecté", static_cast<int>(k + 2));
             continue;
         }
 
@@ -176,7 +185,7 @@ static void envoyerEtat(AppState* state)
     const int taille = encoderEtat(state->jeu, message, sizeof(message));
     if (taille < 0) return;
     for (JoueurDistant& j : state->hote.joueurs)
-        envoyerMessage(j.socket, message, taille);
+        if (j.socket) envoyerMessage(j.socket, message, taille);  // pas aux joueurs partis
 }
 
 // Revenir au menu en coupant proprement le réseau

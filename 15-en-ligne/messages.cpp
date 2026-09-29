@@ -124,7 +124,7 @@ bool decoderEntrees(const std::uint8_t* tampon, int taille, Entrees& e)
 }
 
 // ---------------------------------------------------------------------------
-// Message d'état : [type][nbJoueurs][x y score]...[nbPieces][x y]...
+// Message d'état : [type][nbJoueurs][x y score actif]...[nbPieces][x y]...
 // ---------------------------------------------------------------------------
 
 // Au-delà, un message d'état est forcément invalide (protection contre les abus)
@@ -135,7 +135,7 @@ int encoderEtat(const Jeu& jeu, std::uint8_t* tampon, int capacite)
     Ecrivain e{tampon, capacite};
     e.u8(static_cast<std::uint8_t>(TypeMessage::Etat));
 
-    // Format : [nbJoueurs][x y score]...[nbPieces][x y]...
+    // Format : [nbJoueurs][x y score actif]...[nbPieces][x y]...
     // Le décodeur devra lire EXACTEMENT dans cet ordre, avec ces types :
     // le message ne contient aucune étiquette, seulement des octets à la suite.
     e.u8(static_cast<std::uint8_t>(jeu.joueurs.size()));
@@ -143,6 +143,7 @@ int encoderEtat(const Jeu& jeu, std::uint8_t* tampon, int capacite)
         e.f32(j.x);
         e.f32(j.y);
         e.u16(static_cast<std::uint16_t>(j.score));
+        e.u8(j.actif ? 1 : 0);  // un bool tient dans un octet
     }
 
     e.u8(static_cast<std::uint8_t>(jeu.pieces.size()));
@@ -171,6 +172,7 @@ bool decoderEtat(const std::uint8_t* tampon, int taille, Jeu& jeu)
         j.x = l.f32();
         j.y = l.f32();
         j.score = l.u16();
+        j.actif = l.u8() != 0;
     }
 
     // nbPieces est lu ICI, après tous les joueurs : c'est là que l'encodeur l'a écrit
