@@ -20,11 +20,17 @@ void Ecrivain::u16(std::uint16_t v)
 
 void Ecrivain::u32(std::uint32_t v)
 {
-    // TODO(human)
+    u8(static_cast<std::uint8_t>(v >> 24));
+    u8(static_cast<std::uint8_t>(v >> 16));
+    u8(static_cast<std::uint8_t>(v >> 8));
+    u8(static_cast<std::uint8_t>(v & 0xFF));
 }
 
 void Ecrivain::f32(float v)
 {
+    std::uint32_t bits;
+    std::memcpy(&bits, &v, 4);
+    u32(bits);
 }
 
 // ---------------------------------------------------------------------------
@@ -45,11 +51,21 @@ std::uint16_t Lecteur::u16()
 }
 
 std::uint32_t Lecteur::u32()
-{
+{    
+    const std::uint32_t o0 = u8(); 
+    const std::uint32_t o1 = u8(); 
+    const std::uint32_t o2 = u8(); 
+    const std::uint32_t o3 = u8();
+
+    return (o0 << 24) | (o1 << 16) | (o2 << 8) | o3;
 }
 
 float Lecteur::f32()
 {
+    std::uint32_t bits = u32();
+    float v;
+    std::memcpy(&v, &bits, 4);
+    return v;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,17 +107,26 @@ bool decoderEntrees(const std::uint8_t* tampon, int taille, Entrees& e)
 }
 
 // ---------------------------------------------------------------------------
-// Message d'état (étape suivante)
+// Message d'état : [type][nbJoueurs][x y score]...[nbPieces][x y]...
 // ---------------------------------------------------------------------------
+
+// Au-delà, un message d'état est forcément invalide (protection contre les abus)
+constexpr int MAX_PIECES_MESSAGE = 64;
 
 int encoderEtat(const Jeu& jeu, std::uint8_t* tampon, int capacite)
 {
-    (void)jeu; (void)tampon; (void)capacite;
-    return -1;
+    Ecrivain e{tampon, capacite};
+    e.u8(static_cast<std::uint8_t>(TypeMessage::Etat));
+
+    // TODO(human)
+
+    return e.ok ? e.pos : -1;
 }
 
 bool decoderEtat(const std::uint8_t* tampon, int taille, Jeu& jeu)
 {
-    (void)tampon; (void)taille; (void)jeu;
+    Lecteur l{tampon, taille};
+    if (l.u8() != static_cast<std::uint8_t>(TypeMessage::Etat)) return false;
+
     return false;
 }
